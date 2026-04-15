@@ -51,74 +51,75 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
     <Tooltip placement="right">
       <TooltipTrigger asChild>
         <div>
-          <Handle type="target" position={Position.Top} className="!bg-slate-500 !border-slate-400 !w-2 !h-2" />
+          <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
 
+          <div
+            style={{
+              background: config.bg,
+              border: `2px solid ${config.border}`,
+              width: 280,
+              minHeight: 90,
+              borderRadius: "0.75rem",
+              overflow: "hidden",
+            }}
+          >
           <NodePanel.Root selected={!!selected}>
-            <div
-              className="rounded-xl overflow-hidden"
-              style={{
-                background: config.bg,
-                border: `2px solid ${config.border}`,
-                width: 280,
-                minHeight: 90,
-              }}
-            >
-              <NodePanel.Header>
-                <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-                  <NodeIcon
-                    icon={<StatusDot color={config.color} />}
-                  />
-                  <span
-                    className="text-[10px] font-bold tracking-wider uppercase"
-                    style={{ color: config.color }}
-                  >
-                    {project.status}
+            <NodePanel.Header>
+              <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+                <NodeIcon
+                  icon={<StatusDot color={config.color} />}
+                />
+                <span
+                  className="text-[10px] font-bold tracking-wider uppercase"
+                  style={{ color: config.color }}
+                >
+                  {project.status}
+                </span>
+              </div>
+            </NodePanel.Header>
+
+            <NodePanel.Content>
+              <div className="px-3 pb-3">
+                <NodeDescription
+                  label={
+                    project.name.length > 32
+                      ? project.name.slice(0, 30) + "\u2026"
+                      : project.name
+                  }
+                  description={[
+                    project.targetDate
+                      ? `Target: ${project.targetDate}`
+                      : null,
+                    project.owner ? project.owner : null,
+                  ]
+                    .filter(Boolean)
+                    .join("  \u2022  ")}
+                />
+              </div>
+            </NodePanel.Content>
+
+            {(project.dependsOn.length > 0 || project.blocks.length > 0) && (
+              <NodePanel.Handles>
+                <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: config.text }}>
+                  <DependencyIcon />
+                  <span>
+                    {project.blocks.length > 0
+                      ? `Blocks ${project.blocks.length}`
+                      : ""}
+                    {project.blocks.length > 0 && project.dependsOn.length > 0
+                      ? " \u2022 "
+                      : ""}
+                    {project.dependsOn.length > 0
+                      ? `Depends on ${project.dependsOn.length}`
+                      : ""}
                   </span>
                 </div>
-              </NodePanel.Header>
-
-              <NodePanel.Content>
-                <div className="px-3 pb-3">
-                  <NodeDescription
-                    label={
-                      project.name.length > 32
-                        ? project.name.slice(0, 30) + "\u2026"
-                        : project.name
-                    }
-                    description={[
-                      project.targetDate
-                        ? `Target: ${project.targetDate}`
-                        : null,
-                      project.owner ? project.owner : null,
-                    ]
-                      .filter(Boolean)
-                      .join("  \u2022  ")}
-                  />
-                </div>
-              </NodePanel.Content>
-
-              {(project.dependsOn.length > 0 || project.blocks.length > 0) && (
-                <NodePanel.Handles>
-                  <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: config.text }}>
-                    <DependencyIcon />
-                    <span>
-                      {project.blocks.length > 0
-                        ? `Blocks ${project.blocks.length}`
-                        : ""}
-                      {project.blocks.length > 0 && project.dependsOn.length > 0
-                        ? " \u2022 "
-                        : ""}
-                      {project.dependsOn.length > 0
-                        ? `Depends on ${project.dependsOn.length}`
-                        : ""}
-                    </span>
-                  </div>
-                </NodePanel.Handles>
-              )}
-            </div>
+              </NodePanel.Handles>
+            )}
           </NodePanel.Root>
+          </div>
 
-          <Handle type="source" position={Position.Bottom} className="!bg-slate-500 !border-slate-400 !w-2 !h-2" />
+          <Handle type="source" position={Position.Bottom} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
         </div>
       </TooltipTrigger>
       <TooltipContent tooltipType="default">

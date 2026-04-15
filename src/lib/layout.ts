@@ -1,4 +1,5 @@
-import { Node, Edge } from "@xyflow/react";
+import type { Node, Edge } from "@xyflow/react";
+import Dagre from "@dagrejs/dagre";
 import { Project, getStatusConfig } from "./types";
 
 export interface ProjectNodeData {
@@ -6,100 +7,84 @@ export interface ProjectNodeData {
   [key: string]: unknown;
 }
 
-/**
- * Topological sort projects into tiers and create React Flow nodes + edges.
- */
+const NODE_W = 280;
+const NODE_H = 100;
+const TIER_LABELS = ["UPSTREAM", "MIDSTREAM", "DOWNSTREAM", "TIER 4", "TIER 5"];
+
 export function buildFlowGraph(projects: Project[]): {
   nodes: Node<ProjectNodeData>[];
   edges: Edge[];
 } {
-  // Topological sort into tiers
-  const tiers: string[][] = [];
-  const assigned = new Set<string>();
-  let remaining = [...projects];
-
-  while (remaining.length > 0) {
-    const currentTier = remaining.filter((p) =>
-      p.dependsOn.every((d) => assigned.has(d))
-    );
-    if (currentTier.length === 0) {
-      // Circular or unresolved — dump remaining into last tier
-      tiers.push(remaining.map((p) => p.name));
-      break;
-    }
-    tiers.push(currentTier.map((p) => p.name));
-    currentTier.forEach((p) => assigned.add(p.name));
-    remaining = remaining.filter((p) => !assigned.has(p.name));
-  }
-
-  // Layout constants
-  const NODE_W = 280;
-  const NODE_H = 100;
-  const H_GAP = 80;
-  const V_GAP = 120;
-  const TOP_MARGIN = 80;
+  const g = new Dagre.graphlib.Graph();
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 80,    // horizontal gap between nodes in the same rank
+    ranksep: 160,   // vertical gap between ranks — gives edges room to route
+    marginx: 120,
+    marginy: 60,
+    edgesep: 20,
+  });
+  g.setDefaultEdgeLabel(() => ({}));
 
   const nameToProject: Record<string, Project> = {};
   projects.forEach((p) => {
     nameToProject[p.name] = p;
+    g.setNode(p.name, { width: NODE_W, height: NODE_H });
   });
 
-  // Create nodes with positions
+  projects.forEach((p) => {
+    p.blocks.forEach((blockedName) => {
+      if (nameToProject[blockedName]) {
+        g.setEdge(p.name, blockedName);
+      }
+    });
+  });
+
+  Dagre.layout(g);
+
+  // Identify ranks by grouping nodes with the same (rounded) Y centre
+  const ySet = new Set<number>();
+  projects.forEach((p) => ySet.add(Math.round(g.node(p.name).y)));
+  const sortedRankYs = Array.from(ySet).sort((a, b) => a - b);
+
   const nodes: Node<ProjectNodeData>[] = [];
-  const TIER_LABELS = [
-    "UPSTREAM",
-    "MIDSTREAM",
-    "DOWNSTREAM",
-    "TIER 4",
-    "TIER 5",
-  ];
 
-  // Calculate the max width needed for centering
-  const maxTierWidth = Math.max(
-    ...tiers.map((tier) => tier.length * NODE_W + (tier.length - 1) * H_GAP)
-  );
-  const canvasWidth = Math.max(maxTierWidth + 200, 960);
-
-  tiers.forEach((tier, tierIdx) => {
-    const totalWidth = tier.length * NODE_W + (tier.length - 1) * H_GAP;
-    const startX = (canvasWidth - totalWidth) / 2;
-
-    // Add tier label node
+  // Tier label nodes (one per rank, pinned to the left)
+  sortedRankYs.forEach((rankY, idx) => {
     nodes.push({
-      id: `tier-label-${tierIdx}`,
+      id: `tier-label-${idx}`,
       type: "tierLabel",
-      position: { x: 20, y: TOP_MARGIN + tierIdx * (NODE_H + V_GAP) - 30 },
-      data: {
-        label: TIER_LABELS[tierIdx] || `TIER ${tierIdx + 1}`,
-        project: {} as Project,
-      },
+      position: { x: 20, y: rankY - NODE_H / 2 - 10 },
+      data: { label: TIER_LABELS[idx] ?? `TIER ${idx + 1}`, project: {} as Project },
       draggable: false,
       selectable: false,
       connectable: false,
     });
+  });
 
-    tier.forEach((name, i) => {
-      const project = nameToProject[name];
-      if (!project) return;
-
-      nodes.push({
-        id: project.name,
-        type: "projectNode",
-        position: {
-          x: startX + i * (NODE_W + H_GAP),
-          y: TOP_MARGIN + tierIdx * (NODE_H + V_GAP),
-        },
-        data: { project },
-      });
+  // Project nodes at dagre-computed positions
+  projects.forEach((p) => {
+    const { x, y } = g.node(p.name);
+    nodes.push({
+      id: p.name,
+      type: "projectNode",
+      position: {
+        x: Math.round(x - NODE_W / 2),
+        y: Math.round(y - NODE_H / 2),
+      },
+      data: { project: p },
     });
   });
 
-  // Create edges
+  // Edges — carry dagre bend-point waypoints so the edge component can draw
+  // paths that route around intermediate nodes instead of through them.
   const edges: Edge[] = [];
   projects.forEach((p) => {
     p.blocks.forEach((blockedName) => {
       if (!nameToProject[blockedName]) return;
       const config = getStatusConfig(p.status);
+      const edgeData = g.edge(p.name, blockedName);
+
       edges.push({
         id: `${p.name}->${blockedName}`,
         source: p.name,
@@ -107,6 +92,10 @@ export function buildFlowGraph(projects: Project[]): {
         type: "dependency",
         style: { stroke: config.color },
         animated: p.status === "In Progress",
+        zIndex: 1,
+        data: {
+          waypoints: (edgeData?.points ?? []) as { x: number; y: number }[],
+        },
       });
     });
   });

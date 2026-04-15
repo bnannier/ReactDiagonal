@@ -36,7 +36,11 @@ interface Props {
 
 export function DependencyMap({ initialProjects }: Props) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setLastUpdated(new Date());
+  }, []);
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildFlowGraph(projects),
@@ -44,7 +48,7 @@ export function DependencyMap({ initialProjects }: Props) {
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges] = useEdgesState(initialEdges);
 
   // Update nodes/edges when projects change
   useEffect(() => {
@@ -77,8 +81,8 @@ export function DependencyMap({ initialProjects }: Props) {
           IUX Dependency Flowmap
         </h1>
         <p className="text-xs text-slate-500">
-          Live data from Coda &bull; Auto-refreshes every 30s &bull; Last:{" "}
-          {lastUpdated.toLocaleTimeString()}
+          Live data from Coda &bull; Auto-refreshes every 30s
+          {lastUpdated && <> &bull; Last: {lastUpdated.toLocaleTimeString()}</>}
         </p>
         <Legend />
         <div>
@@ -94,9 +98,11 @@ export function DependencyMap({ initialProjects }: Props) {
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          onConnect={() => {}}
+          nodesConnectable={false}
+          elevateEdgesOnSelect
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.3}
