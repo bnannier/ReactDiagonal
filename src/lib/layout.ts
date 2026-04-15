@@ -7,7 +7,7 @@ export interface ProjectNodeData {
   [key: string]: unknown;
 }
 
-const NODE_W = 280;
+const NODE_W = 250;
 const NODE_H = 100;
 const TIER_LABELS = ["UPSTREAM", "MIDSTREAM", "DOWNSTREAM", "TIER 4", "TIER 5"];
 
@@ -76,15 +76,13 @@ export function buildFlowGraph(projects: Project[]): {
     });
   });
 
-  // Edges — carry dagre bend-point waypoints so the edge component can draw
-  // paths that route around intermediate nodes instead of through them.
+  // Build edges first, then annotate with per-node source/target indices so
+  // the edge component can spread the vertical stems and avoid overlapping.
   const edges: Edge[] = [];
   projects.forEach((p) => {
     p.blocks.forEach((blockedName) => {
       if (!nameToProject[blockedName]) return;
       const config = getStatusConfig(p.status);
-      const edgeData = g.edge(p.name, blockedName);
-
       edges.push({
         id: `${p.name}->${blockedName}`,
         source: p.name,
@@ -93,11 +91,16 @@ export function buildFlowGraph(projects: Project[]): {
         style: { stroke: config.color },
         animated: p.status === "In Progress",
         zIndex: 1,
-        data: {
-          waypoints: (edgeData?.points ?? []) as { x: number; y: number }[],
-        },
+        data: {},
       });
     });
+  });
+
+  // Give every edge a stable global index so the bypass channels
+  // can be spread apart even when they come from different source nodes.
+  const edgeTotal = edges.length;
+  edges.forEach((e, i) => {
+    e.data = { edgeIndex: i, edgeTotal };
   });
 
   return { nodes, edges };

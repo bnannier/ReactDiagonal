@@ -3,69 +3,113 @@
 import { memo } from "react";
 import {
   BaseEdge,
-  getBezierPath,
+  getSmoothStepPath,
+  useNodes,
+  Position,
   type EdgeProps,
+  type Node,
   EdgeLabelRenderer,
 } from "@xyflow/react";
 import { useEdgeStyle, EdgeLabel } from "@synergycodes/overflow-ui";
 
-type Pt = { x: number; y: number };
+const NODE_W = 250;
+const NODE_H = 115;   // slightly taller than visual height to add clearance
+const BYPASS_MARGIN = 28;
+const CORNER_R = 14;
 
-/**
- * Build a smooth SVG path through an ordered list of points.
- * Straight segments between waypoints, with a small quadratic-bezier
- * rounded corner at each bend — so the path never cuts through nodes.
- */
-function smoothPath(pts: Pt[]): string {
+/** Polyline through `pts` with rounded corners of radius `r`. */
+function smoothPoly(pts: [number, number][], r: number): string {
   if (pts.length < 2) return "";
-  if (pts.length === 2) {
-    return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
-  }
-
-  const R = 14; // corner-rounding radius (px)
-  let d = `M ${pts[0].x} ${pts[0].y}`;
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
 
   for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1];
-    const curr = pts[i];
-    const next = pts[i + 1];
+    const [px, py] = pts[i - 1];
+    const [cx, cy] = pts[i];
+    const [nx, ny] = pts[i + 1];
 
-    const dx1 = curr.x - prev.x;
-    const dy1 = curr.y - prev.y;
-    const len1 = Math.hypot(dx1, dy1);
+    const dx1 = cx - px, dy1 = cy - py, len1 = Math.hypot(dx1, dy1);
+    const dx2 = nx - cx, dy2 = ny - cy, len2 = Math.hypot(dx2, dy2);
 
-    const dx2 = next.x - curr.x;
-    const dy2 = next.y - curr.y;
-    const len2 = Math.hypot(dx2, dy2);
+    if (len1 === 0 || len2 === 0) { d += ` L ${cx} ${cy}`; continue; }
 
-    if (len1 === 0 || len2 === 0) {
-      d += ` L ${curr.x} ${curr.y}`;
-      continue;
-    }
-
-    const r = Math.min(R, len1 / 2, len2 / 2);
-
-    // Point just before the corner
-    const ax = curr.x - (r / len1) * dx1;
-    const ay = curr.y - (r / len1) * dy1;
-
-    // Point just after the corner
-    const bx = curr.x + (r / len2) * dx2;
-    const by = curr.y + (r / len2) * dy2;
-
-    d += ` L ${ax} ${ay} Q ${curr.x} ${curr.y} ${bx} ${by}`;
+    const rr = Math.min(r, len1 / 2, len2 / 2);
+    const ax = cx - (rr / len1) * dx1, ay = cy - (rr / len1) * dy1;
+    const bx = cx + (rr / len2) * dx2, by = cy + (rr / len2) * dy2;
+    d += ` L ${ax} ${ay} Q ${cx} ${cy} ${bx} ${by}`;
   }
 
-  const last = pts[pts.length - 1];
-  d += ` L ${last.x} ${last.y}`;
+  d += ` L ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]}`;
   return d;
 }
 
-function labelMidpoint(pts: Pt[]): [number, number] {
-  const mid = Math.floor((pts.length - 1) / 2);
-  const a = pts[mid];
-  const b = pts[mid + 1] ?? a;
-  return [(a.x + b.x) / 2, (a.y + b.y) / 2];
+function routedPath(
+  sx: number, sy: number,
+  tx: number, ty: number,
+  sourceId: string,
+  targetId: string,
+  nodes: Node[],
+  bypassShift: number = 0,
+): string {
+  // Detect nodes whose bounding box intersects the direct vertical/horizontal
+  // route from source to target.
+  const minY = Math.min(sy, ty);
+  const maxY = Math.max(sy, ty);
+  const minX = Math.min(sx, tx) - 8;
+  const maxX = Math.max(sx, tx) + 8;
+
+  const blocking = nodes.filter((n) => {
+    if (n.id === sourceId || n.id === targetId || n.type === "tierLabel") return false;
+    const left  = n.position.x;
+    const right = left + NODE_W;
+    const top   = n.position.y;
+    const bot   = top + NODE_H;
+    // Must overlap both vertical and horizontal ranges of the path corridor
+    return top < maxY && bot > minY && left <= maxX && right >= minX;
+  });
+
+  // Offset crossing by ±5px based on direction so left-going and right-going
+  // edges that share the same tier pair don't overlap each other.
+  const dirOffset = tx < sx ? -5 : tx > sx ? 5 : 0;
+  const crossY = (sy + ty) / 2 + dirOffset;
+
+  if (blocking.length === 0) {
+    return smoothPoly([
+      [sx, sy],
+      [sx, crossY],
+      [tx, crossY],
+      [tx, ty],
+    ], CORNER_R);
+  }
+
+  // Bypass: route to the left of every blocking node.
+  const srcNode = nodes.find((n) => n.id === sourceId);
+  const tgtNode = nodes.find((n) => n.id === targetId);
+
+  const bypassX =
+    Math.min(
+      ...blocking.map((n) => n.position.x),
+      srcNode?.position.x ?? sx,
+      tgtNode?.position.x ?? tx,
+    ) - BYPASS_MARGIN + bypassShift;
+
+  const pts: [number, number][] = [
+    [sx, sy],
+    [sx, sy + BYPASS_MARGIN],
+    [bypassX, sy + BYPASS_MARGIN],
+    [bypassX, ty - BYPASS_MARGIN],
+    [tx, ty - BYPASS_MARGIN],
+    [tx, ty],
+  ];
+
+  return smoothPoly(pts, CORNER_R);
+}
+
+const CHANNEL_SPREAD = 20; // px between parallel bypass channels
+
+function channelOffset(index: number, total: number): number {
+  if (total <= 1) return 0;
+  // Spread symmetrically around 0
+  return (index - (total - 1) / 2) * CHANNEL_SPREAD;
 }
 
 function DependencyEdgeComponent({
@@ -74,14 +118,23 @@ function DependencyEdgeComponent({
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
   selected,
   style,
+  source,
+  target,
   data,
 }: EdgeProps) {
-  const edgeState = selected ? "selected" : "default";
+  const nodes   = useNodes();
+  const edgeState    = selected ? "selected" : "default";
   const overflowStyle = useEdgeStyle({ state: edgeState });
+
+  // Spread every bypass channel by a unique global offset so no two edges
+  // share the same corridor, regardless of which source card they come from.
+  // Stems (the exit/entry verticals) are unaffected — they stay on the handle.
+  const d = data as { edgeIndex?: number; edgeTotal?: number } | undefined;
+  const shift = channelOffset(d?.edgeIndex ?? 0, d?.edgeTotal ?? 1);
+
+  const edgePath = routedPath(sourceX, sourceY, targetX, targetY, source, target, nodes, shift);
 
   const mergedStyle = {
     ...overflowStyle,
@@ -89,35 +142,9 @@ function DependencyEdgeComponent({
     opacity: 0.6,
   };
 
-  // Use dagre waypoints when available; fall back to a simple bezier.
-  const rawWaypoints = (data as { waypoints?: Pt[] } | undefined)?.waypoints ?? [];
-
-  let edgePath: string;
-  let labelX: number;
-  let labelY: number;
-
-  if (rawWaypoints.length > 2) {
-    // Dagre gives us the full path including points at the node boundaries.
-    // Replace the first/last dagre points with the actual React Flow handle
-    // positions so the line connects exactly to the handles.
-    const innerPts = rawWaypoints.slice(1, -1);
-    const pts: Pt[] = [
-      { x: sourceX, y: sourceY },
-      ...innerPts,
-      { x: targetX, y: targetY },
-    ];
-    edgePath = smoothPath(pts);
-    [labelX, labelY] = labelMidpoint(pts);
-  } else {
-    [edgePath, labelX, labelY] = getBezierPath({
-      sourceX,
-      sourceY,
-      targetX,
-      targetY,
-      sourcePosition,
-      targetPosition,
-    });
-  }
+  // Mid-point for the label
+  const labelX = (sourceX + targetX) / 2;
+  const labelY = (sourceY + targetY) / 2;
 
   return (
     <>
@@ -133,11 +160,7 @@ function DependencyEdgeComponent({
           >
             <EdgeLabel state={edgeState} size="extra-small" type="icon">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M2 6h8M7 3l3 3-3 3"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
+                <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" />
               </svg>
             </EdgeLabel>
           </div>

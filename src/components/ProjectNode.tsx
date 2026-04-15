@@ -53,17 +53,22 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
         <div>
           <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
 
-          <div
-            style={{
-              background: config.bg,
-              border: `2px solid ${config.border}`,
-              width: 280,
-              minHeight: 90,
-              borderRadius: "0.75rem",
-              overflow: "hidden",
-            }}
+          <div style={{ position: "relative", width: 250 }}>
+            {/* Absolute border overlay — wraps the NodePanel without affecting its layout */}
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                border: `2px solid ${config.border}`,
+                borderRadius: "12px",
+                pointerEvents: "none",
+                zIndex: 1,
+              }}
+            />
+          <NodePanel.Root
+            selected={!!selected}
+            className="!bg-transparent !shadow-none !border-0 !rounded-xl overflow-hidden [&>div]:!w-full [&>div]:!max-w-none"
           >
-          <NodePanel.Root selected={!!selected}>
             <NodePanel.Header>
               <div className="flex items-center gap-2 px-3 pt-3 pb-1">
                 <NodeIcon
