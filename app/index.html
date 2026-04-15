@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReactDiagonal — IUX Dependency Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── CONFIGURE THIS ──────────────────────────────────
+const WORKER_URL = "https://iux-dependency-proxy.reactdiagonal.workers.dev";
+// ─────────────────────────────────────────────────────
+
+const STATUS_COLORS = {
+  "In Progress": { bg: "#fffbeb", border: "#f59e0b", text: "#92400e", dot: "#f59e0b" },
+  "Blocked":     { bg: "#fef2f2", border: "#ef4444", text: "#991b1b", dot: "#ef4444" },
+  "Not Started": { bg: "#f0f1f3", border: "#9ca3af", text: "#374151", dot: "#9ca3af" },
+  "Complete":    { bg: "#f0fdf4", border: "#22c55e", text: "#166534", dot: "#22c55e" },
+};
+
+const DEFAULT_COLOR = { bg: "#f0f1f3", border: "#9ca3af", text: "#374151", dot: "#9ca3af" };
+
+function getStatusColor(status) {
+  return STATUS_COLORS[status] || DEFAULT_COLOR;
+}
+
+// Parse Coda API rich value into a plain string
+function parseValue(val) {
+  if (!val) return "";
+  if (typeof val === "string") return val;
+  if (val.type === "arr" && val.value) return val.value.map(v => v.name || v).join(", ");
+  if (val.name) return val.name;
+  if (val.formatted) return val.formatted;
+  if (val.content) return val.content;
+  return String(val);
+}
+
+// Parse lookup refs into array of names
+function parseLookupRefs(val) {
+  if (!val) return [];
+  if (typeof val === "string") return val ? [val] : [];
+  if (val.type === "arr" && val.value) return val.value.map(v => v.name || String(v));
+  if (val.name) return [val.name];
+  return [];
+}
+
+// ── Layout engine: assign tier & position ───────────
+function layoutNodes(projects) {
+  const nameToProject = {};
+  projects.forEach(p => { nameToProject[p.name] = p; });
+
+  // Compute in-degree (how many things depend on each)
+  const inDegree = {};
+  projects.forEach(p => { inDegree[p.name] = 0; });
+  projects.forEach(p => {
+    p.blocks.forEach(b => {
+      if (inDegree[b] !== undefined) inDegree[b]++;
+    });
+  });
+
+  // Topological sort into tiers
+  const tiers = [];
+  const assigned = new Set();
+  let remaining = [...projects];
+
+  while (remaining.length > 0) {
+    const currentTier = remaining.filter(p => {
+      return p.dependsOn.every(d => assigned.has(d));
+    });
+    if (currentTier.length === 0) {
+      // Circular or unresolved — dump remaining into last tier
+      tiers.push(remaining.map(p => p.name));
+      break;
+    }
+    tiers.push(currentTier.map(p => p.name));
+    currentTier.forEach(p => assigned.add(p.name));
+    remaining = remaining.filter(p => !assigned.has(p.name));
+  }
+
+  // Assign coordinates
+  const NODE_W = 260;
+  const NODE_H = 90;
+  const H_GAP = 60;
+  const V_GAP = 100;
+  const TOP_MARGIN = 100;
+
+  const positions = {};
+  tiers.forEach((tier, tierIdx) => {
+    const totalWidth = tier.length * NODE_W + (tier.length - 1) * H_GAP;
+    const startX = (900 - totalWidth) / 2;
+    tier.forEach((name, i) => {
+      positions[name] = {
+        x: startX + i * (NODE_W + H_GAP),
+        y: TOP_MARGIN + tierIdx * (NODE_H + V_GAP),
+        w: NODE_W,
+        h: NODE_H,
+        tier: tierIdx,
+      };
+    });
+  });
+
+  return { positions, tiers };
+}
+
+// ── SVG Edge with curved path ───────────────────────
+function Edge({ from, to, color }) {
+  const x1 = from.x + from.w / 2;
+  const y1 = from.y + from.h;
+  const x2 = to.x + to.w / 2;
+  const y2 = to.y;
+  const midY = (y1 + y2) / 2;
+
+  return (
+    <path
+      d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      opacity="0.5"
+      markerEnd="url(#arrowhead)"
+    />
+  );
+}
+
+// ── Node component ──────────────────────────────────
+function Node({ project, pos, isHovered, onHover, onLeave, onClick }) {
+  const colors = getStatusColor(project.status);
+  const glowOpacity = isHovered ? 0.6 : 0;
+
+  return (
+    <g
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onClick={onClick}
+      style={{ cursor: "pointer" }}
+    >
+      {/* Glow */}
+      <rect
+        x={pos.x - 4} y={pos.y - 4}
+        width={pos.w + 8} height={pos.h + 8}
+        rx="14" ry="14"
+        fill={colors.border}
+        opacity={glowOpacity}
+        filter="url(#blur)"
+      />
+      {/* Card */}
+      <rect
+        x={pos.x} y={pos.y}
+        width={pos.w} height={pos.h}
+        rx="10" ry="10"
+        fill={colors.bg}
+        stroke={colors.border}
+        strokeWidth="2"
+      />
+      {/* Status dot */}
+      <circle cx={pos.x + 16} cy={pos.y + 20} r="5" fill={colors.dot} />
+      {/* Status text */}
+      <text x={pos.x + 28} y={pos.y + 24} fontSize="11" fontWeight="600" fill={colors.dot}>
+        {project.status.toUpperCase()}
+      </text>
+      {/* Project name */}
+      <text x={pos.x + 16} y={pos.y + 48} fontSize="14" fontWeight="600" fill={colors.text}>
+        {project.name.length > 30 ? project.name.slice(0, 28) + "…" : project.name}
+      </text>
+      {/* Target date */}
+      <text x={pos.x + 16} y={pos.y + 68} fontSize="11" fill="#6b7280">
+        {project.targetDate ? `Target: ${project.targetDate}` : "No target date"}
+        {project.owner ? `  •  ${project.owner}` : ""}
+      </text>
+    </g>
+  );
+}
+
+// ── Tooltip ─────────────────────────────────────────
+function Tooltip({ project, x, y }) {
+  if (!project) return null;
+  return (
+    <div style={{
+      position: "fixed", left: x + 16, top: y - 10,
+      background: "#1e293b", border: "1px solid #334155",
+      borderRadius: 8, padding: "12px 16px", maxWidth: 280,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.4)", zIndex: 100,
+      pointerEvents: "none",
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 4, color: "#f8fafc" }}>{project.name}</div>
+      <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+        <div>Status: {project.status}</div>
+        {project.targetDate && <div>Target: {project.targetDate}</div>}
+        {project.owner && <div>Owner: {project.owner}</div>}
+        {project.dependsOn.length > 0 && <div>Depends on: {project.dependsOn.join(", ")}</div>}
+        {project.blocks.length > 0 && <div>Blocks: {project.blocks.join(", ")}</div>}
+        {project.notes && <div style={{ marginTop: 4, fontStyle: "italic" }}>{project.notes}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ────────────────────────────────────────
+function App() {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [hoveredId, setHoveredId] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const resp = await fetch(`${WORKER_URL}/rows`);
+      if (!resp.ok) throw new Error(`API returned ${resp.status}`);
+      const data = await resp.json();
+
+      const parsed = (data.items || []).map(row => {
+        const vals = row.values || {};
+        return {
+          id: row.id,
+          name: parseValue(vals["Project / Initiative"]),
+          status: parseValue(vals["Status"]),
+          owner: parseValue(vals["Owner"]),
+          targetDate: parseValue(vals["Target Date"]),
+          dependencyType: parseValue(vals["Dependency Type"]),
+          notes: parseValue(vals["Notes"]),
+          dependsOn: parseLookupRefs(vals["Depends On"]),
+          blocks: parseLookupRefs(vals["Blocks"]),
+        };
+      });
+
+      setProjects(parsed);
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  const handleMouseMove = (e) => {
+    setTooltipPos({ x: e.clientX, y: e.clientY });
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>Loading dependency map…</div>
+          <div style={{ fontSize: 13, color: "#64748b" }}>Fetching data from Coda</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+        <div style={{ textAlign: "center", color: "#ef4444" }}>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>Connection Error</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", maxWidth: 400 }}>
+            {error}. Make sure the Worker URL is configured and the Cloudflare Worker is deployed.
+          </div>
+          <button onClick={fetchData} style={{
+            marginTop: 16, padding: "8px 20px", background: "#3b82f6",
+            color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13,
+          }}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
+  const { positions, tiers } = layoutNodes(projects);
+  const TIER_LABELS = ["UPSTREAM", "MIDSTREAM", "DOWNSTREAM", "TIER 4", "TIER 5"];
+  const svgHeight = tiers.length * 190 + 120;
+
+  // Build edges
+  const edges = [];
+  projects.forEach(p => {
+    const fromPos = positions[p.name];
+    if (!fromPos) return;
+    p.blocks.forEach(blockedName => {
+      const toPos = positions[blockedName];
+      if (!toPos) return;
+      const colors = getStatusColor(p.status);
+      edges.push({ from: fromPos, to: toPos, color: colors.border, key: `${p.name}->${blockedName}` });
+    });
+  });
+
+  const hoveredProject = projects.find(p => p.name === hoveredId);
+
+  return (
+    <div style={{ padding: "32px 20px", maxWidth: 960, margin: "0 auto" }} onMouseMove={handleMouseMove}>
+      {/* Header */}
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, color: "#f8fafc", marginBottom: 6 }}>
+          IUX Dependency Flowmap
+        </h1>
+        <p style={{ fontSize: 13, color: "#64748b" }}>
+          Live data from Coda • Auto-refreshes every 30s
+          {lastUpdated && ` • Last: ${lastUpdated.toLocaleTimeString()}`}
+        </p>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 28, flexWrap: "wrap" }}>
+        {Object.entries(STATUS_COLORS).map(([status, colors]) => (
+          <div key={status} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.dot }} />
+            {status}
+          </div>
+        ))}
+      </div>
+
+      {/* Refresh button */}
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <button onClick={fetchData} style={{
+          padding: "6px 16px", background: "#1e293b", color: "#94a3b8",
+          border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 12,
+        }}>
+          ↻ Refresh Now
+        </button>
+      </div>
+
+      {/* Diagram */}
+      <svg viewBox={`0 0 900 ${svgHeight}`} style={{ width: "100%", height: "auto" }}>
+        <defs>
+          <filter id="blur"><feGaussianBlur stdDeviation="6" /></filter>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6" fill="#64748b" opacity="0.6" />
+          </marker>
+        </defs>
+
+        {/* Tier labels */}
+        {tiers.map((tier, i) => (
+          <text key={i} x={20} y={100 + i * 190 - 10} fontSize="10" fontWeight="700" fill="#475569" letterSpacing="2">
+            {TIER_LABELS[i] || `TIER ${i + 1}`}
+          </text>
+        ))}
+
+        {/* Edges */}
+        {edges.map(e => (
+          <Edge key={e.key} from={e.from} to={e.to} color={e.color} />
+        ))}
+
+        {/* Nodes */}
+        {projects.map(p => {
+          const pos = positions[p.name];
+          if (!pos) return null;
+          return (
+            <Node
+              key={p.name}
+              project={p}
+              pos={pos}
+              isHovered={hoveredId === p.name}
+              onHover={() => setHoveredId(p.name)}
+              onLeave={() => setHoveredId(null)}
+              onClick={() => {}}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Tooltip */}
+      <Tooltip project={hoveredProject} x={tooltipPos.x} y={tooltipPos.y} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
