@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchProjectsServer } from "@/lib/api";
+import { fetchProjectsServer, fetchStatusColors } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -7,9 +7,12 @@ export async function GET(req: NextRequest) {
   const tableId = searchParams.get("tableId") ?? undefined;
 
   try {
-    const projects = await fetchProjectsServer(docId, tableId);
+    const [projects, statusColors] = await Promise.all([
+      fetchProjectsServer(docId, tableId),
+      fetchStatusColors(docId, tableId),
+    ]);
     return NextResponse.json(
-      { projects },
+      { projects, statusColors },
       {
         headers: {
           "Cache-Control": "s-maxage=30, stale-while-revalidate=60",

@@ -1,4 +1,4 @@
-import { fetchProjectsServer, fetchTableName } from "@/lib/api";
+import { fetchProjectsServer, fetchStatusColors, fetchTableName } from "@/lib/api";
 import { DependencyMap } from "@/components/DependencyMap";
 
 export const dynamic = "force-dynamic";
@@ -10,15 +10,19 @@ interface Props {
 export default async function Home({ searchParams }: Props) {
   const { docId, tableId } = await searchParams;
 
-  const [projects, tableName] = await Promise.allSettled([
+  const [projects, tableName, statusColors] = await Promise.allSettled([
     fetchProjectsServer(docId, tableId),
     fetchTableName(docId, tableId),
+    fetchStatusColors(docId, tableId),
   ]);
 
   return (
     <main className="flex flex-col h-screen">
       <DependencyMap
         initialProjects={projects.status === "fulfilled" ? projects.value : []}
+        initialStatusColors={
+          statusColors.status === "fulfilled" ? statusColors.value : {}
+        }
         title={tableName.status === "fulfilled" ? tableName.value : undefined}
         docId={docId}
         tableId={tableId}

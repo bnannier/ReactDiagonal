@@ -215,7 +215,7 @@ export function buildFlowGraph(projects: Project[]): {
         target: p.name,
         type: "dependency",
         style: { stroke: BLOCKED_COLOR },
-        markerEnd: { type: MarkerType.ArrowClosed, color: BLOCKED_COLOR, width: 16, height: 16 },
+        markerStart: { type: MarkerType.ArrowClosed, color: BLOCKED_COLOR, width: 16, height: 16 },
         zIndex: 1,
         data: {},
       });
@@ -233,7 +233,7 @@ export function buildFlowGraph(projects: Project[]): {
         target: p.name,
         type: "dependency",
         style: { stroke: DEPENDS_COLOR, strokeDasharray: "6 3" },
-        markerEnd: { type: MarkerType.Arrow, color: DEPENDS_COLOR, width: 16, height: 16 },
+        markerStart: { type: MarkerType.Arrow, color: DEPENDS_COLOR, width: 16, height: 16 },
         zIndex: 1,
         data: {},
       });

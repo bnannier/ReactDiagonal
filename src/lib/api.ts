@@ -1,6 +1,8 @@
 import { Project } from "./types";
 import { codaConfig } from "./coda-config";
 
+export type StatusColors = Record<string, { fg: string; bg: string }>;
+
 const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
 const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-JnGN_SjsL9";
 const CODA_API = "https://coda.io/apis/v1";
@@ -152,12 +154,65 @@ export async function fetchProjectsServer(
 }
 
 /**
+ * Server-side: fetch the Status column's select options with colors from Coda.
+ * Returns a map of status-name → { fg, bg } hex colors set in the Coda table.
+ */
+export async function fetchStatusColors(
+  docId = DEFAULT_DOC_ID,
+  tableId = DEFAULT_TABLE_ID,
+): Promise<StatusColors> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) return {};
+
+  // List columns to find the Status column ID
+  const colsResp = await fetch(
+    `${CODA_API}/docs/${docId}/tables/${tableId}/columns`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      next: { revalidate: 60 },
+    }
+  );
+  if (!colsResp.ok) return {};
+  const colsData = await colsResp.json();
+  const statusCol = (colsData.items || []).find(
+    (c: { name: string; id: string }) => c.name === codaConfig.statusColumn
+  );
+  if (!statusCol?.id) return {};
+
+  // Fetch the status column detail to get its select options
+  const detailResp = await fetch(
+    `${CODA_API}/docs/${docId}/tables/${tableId}/columns/${statusCol.id}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      next: { revalidate: 60 },
+    }
+  );
+  if (!detailResp.ok) return {};
+  const detail = await detailResp.json();
+
+  const options = detail?.format?.options as
+    | { name: string; foregroundColor?: string; backgroundColor?: string }[]
+    | undefined;
+  if (!options) return {};
+
+  const colors: StatusColors = {};
+  for (const o of options) {
+    if (!o?.name) continue;
+    colors[o.name] = {
+      fg: o.foregroundColor || "#64748b",
+      bg: o.backgroundColor || "#f1f5f9",
+    };
+  }
+  return colors;
+}
+
+/**
  * Client-side: fetch from our own API route (keeps the token hidden).
  */
 export async function fetchProjectsClient(
   docId?: string,
   tableId?: string,
-): Promise<Project[]> {
+): Promise<{ projects: Project[]; statusColors: StatusColors }> {
   const params = new URLSearchParams();
   if (docId) params.set("docId", docId);
   if (tableId) params.set("tableId", tableId);
@@ -165,5 +220,5 @@ export async function fetchProjectsClient(
   const resp = await fetch(`/api/rows${qs}`);
   if (!resp.ok) throw new Error(`API returned ${resp.status}`);
   const data = await resp.json();
-  return data.projects;
+  return { projects: data.projects, statusColors: data.statusColors || {} };
 }

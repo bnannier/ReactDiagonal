@@ -22,9 +22,12 @@ import { Legend } from "./Legend";
 import { HelpModal } from "./HelpModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { ThemeParamSync } from "./ThemeParamSync";
+import { StatusColorsProvider } from "./StatusColorsContext";
+import { Button } from "@/components/ui/button";
 import { buildFlowGraph } from "@/lib/layout";
 import { fetchProjectsClient } from "@/lib/api";
 import type { Project } from "@/lib/types";
+import type { StatusColors } from "@/lib/api";
 import type { ProjectNodeData } from "@/lib/layout";
 
 const nodeTypes: NodeTypes = {
@@ -39,6 +42,7 @@ const edgeTypes: EdgeTypes = {
 
 interface Props {
   initialProjects: Project[];
+  initialStatusColors?: StatusColors;
   title?: string;
   docId?: string;
   tableId?: string;
@@ -55,8 +59,15 @@ function FlowUpdater({ nodes, edges }: { nodes: Node<ProjectNodeData>[]; edges: 
   return null;
 }
 
-export function DependencyMap({ initialProjects, title, docId, tableId }: Props) {
+export function DependencyMap({
+  initialProjects,
+  initialStatusColors = {},
+  docId,
+  tableId,
+}: Props) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [statusColors, setStatusColors] =
+    useState<StatusColors>(initialStatusColors);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -72,7 +83,8 @@ export function DependencyMap({ initialProjects, title, docId, tableId }: Props)
   const refresh = useCallback(async () => {
     try {
       const fresh = await fetchProjectsClient(docId, tableId);
-      setProjects(fresh);
+      setProjects(fresh.projects);
+      setStatusColors(fresh.statusColors);
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Failed to refresh:", err);
@@ -86,23 +98,26 @@ export function DependencyMap({ initialProjects, title, docId, tableId }: Props)
 
   return (
     <ReactFlowProvider>
+      <StatusColorsProvider value={statusColors}>
       <div className="flex flex-col h-full">
         <HelpModal />
         <ThemeParamSync />
         <ThemeToggle />
         {/* Refresh button — fixed top-right, left of the ? button */}
-        <button
+        <Button
+          variant="outline"
+          size="icon"
           onClick={refresh}
-          className="fixed top-3 right-16 z-50 w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm flex items-center justify-center transition-colors"
+          className="fixed top-3 right-16 z-50 w-7 h-7 rounded-full"
           aria-label="Refresh"
         >
           &#x21bb;
-        </button>
+        </Button>
         {/* Header */}
         <div className="flex flex-col items-center gap-2 py-4 px-4 shrink-0">
           <Legend />
           {lastUpdated && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {lastUpdated.toLocaleTimeString()}
             </p>
           )}
@@ -144,6 +159,7 @@ export function DependencyMap({ initialProjects, title, docId, tableId }: Props)
           </ReactFlow>
         </div>
       </div>
+      </StatusColorsProvider>
     </ReactFlowProvider>
   );
 }

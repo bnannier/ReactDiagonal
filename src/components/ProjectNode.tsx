@@ -1,37 +1,40 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useTheme } from "next-themes";
 import {
-  NodePanel,
-  NodeDescription,
-  NodeIcon,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@synergycodes/overflow-ui";
-import { getStatusConfig, type Project } from "@/lib/types";
+} from "@/components/ui/tooltip";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { type Project } from "@/lib/types";
+import { useStatusColors } from "./StatusColorsContext";
 
-// Status indicator icons as SVG
+// Status indicator dot
 function StatusDot({ color }: { color: string }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12">
-      <circle cx="6" cy="6" r="5" fill={color} />
-    </svg>
+    <span
+      aria-hidden
+      className="inline-block w-2 h-2 rounded-full"
+      style={{ backgroundColor: color }}
+    />
   );
 }
 
-// Dependency arrow icon
+// Small dependency arrow
 function DependencyIcon() {
   return (
     <svg
-      width="16"
-      height="16"
+      width="12"
+      height="12"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.5"
+      className="shrink-0"
     >
       <path d="M3 8h10M10 5l3 3-3 3" />
     </svg>
@@ -44,108 +47,150 @@ interface ProjectNodeData {
   [key: string]: unknown;
 }
 
-function ProjectNodeComponent({ data, selected }: NodeProps) {
+// Apply a low-opacity version of a hex color for subtle card tints in any theme.
+function hexWithAlpha(hex: string, alpha: string): string {
+  // If it's already an 8-digit hex, replace the alpha; otherwise append alpha
+  const clean = hex.startsWith("#") ? hex : `#${hex}`;
+  if (clean.length === 9) return clean.slice(0, 7) + alpha;
+  return clean + alpha;
+}
+
+function ProjectNodeComponent({ data }: NodeProps) {
   const nodeData = data as unknown as ProjectNodeData;
   const { project, blockedBy } = nodeData;
-  const config = getStatusConfig(project.status);
-  const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const isDark = mounted ? resolvedTheme === "dark" : true; // default dark to avoid FOUC
-  const cardBg = isDark ? config.bgDark : config.bg;
-  const footerText = isDark ? config.textDark : config.text;
+  const statusLabel = project.status || "No Status";
+
+  // Dynamic colors from Coda's Status column options.
+  const statusColors = useStatusColors();
+  const colors = statusColors[project.status];
+  // Fallback neutral if no status / unknown status
+  const dotColor = colors?.fg || "#9ca3af";
+  const badgeBg = colors ? hexWithAlpha(colors.bg, "80") : undefined; // 50% alpha
+  const badgeFg = colors?.fg;
+  const badgeBorder = colors ? hexWithAlpha(colors.fg, "40") : undefined; // 25% alpha
+  // Card tint: layer Coda's fg color (low alpha) on top of a white base so the
+  // card renders as a clean pastel (not a washed-out tint on the dark page).
+  // In dark mode we also override the card's CSS vars to the light-mode values
+  // so text remains readable on the white background.
+  const tintAlpha = colors ? hexWithAlpha(colors.bg, "E6") : undefined; // 90% alpha of Coda's bg over white
+  const cardStyle: React.CSSProperties | undefined = colors
+    ? ({
+        // Background is driven by the --tint CSS var so the flash animation
+        // can swap it between the status colour and red without losing the
+        // white base layer.
+        "--tint": tintAlpha,
+        background: `linear-gradient(${tintAlpha}, ${tintAlpha}), #ffffff`,
+        borderColor: colors.fg,
+        // Scope light-mode color vars to the card so shadcn text tokens stay readable.
+        "--foreground": "222.2 84% 4.9%",
+        "--muted-foreground": "215.4 16.3% 46.9%",
+        "--card-foreground": "222.2 84% 4.9%",
+        "--border": "214.3 31.8% 91.4%",
+        color: "hsl(var(--card-foreground))",
+      } as React.CSSProperties)
+    : undefined;
 
   return (
-    <Tooltip placement="right">
+    <Tooltip>
       <TooltipTrigger asChild>
         <div>
-          <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
+          <Handle
+            type="target"
+            position={Position.Top}
+            className="!opacity-0 !pointer-events-none !w-2 !h-2"
+          />
 
-          <div style={{ position: "relative", width: 250, background: cardBg }} className="rounded-xl">
-            {/* Absolute border overlay — wraps the NodePanel without affecting its layout */}
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                border: `2px solid ${config.border}`,
-                borderRadius: "12px",
-                pointerEvents: "none",
-                zIndex: 1,
-              }}
-            />
-          <NodePanel.Root
-            selected={!!selected}
-            className="!bg-transparent !shadow-none !border-0 !rounded-xl overflow-hidden [&>div]:!w-full [&>div]:!max-w-none"
+          <Card
+            className={cn(
+              "w-[250px] gap-0 py-0 rounded-xl shadow-sm border-2 ring-0",
+              "bg-card text-card-foreground",
+              blockedBy > 0 && "animate-block-flash"
+            )}
+            style={cardStyle}
           >
-            <NodePanel.Header>
-              <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-                <NodeIcon
-                  icon={<StatusDot color={config.color} />}
-                />
-                <span
-                  className="text-[10px] font-bold tracking-wider uppercase"
-                  style={{ color: config.color }}
-                >
-                  {project.status}
-                </span>
-              </div>
-            </NodePanel.Header>
+            {/* Header: status badge */}
+            <div className="px-3 pt-3 pb-1">
+              <Badge
+                variant="outline"
+                className="gap-1.5 text-[10px] font-semibold tracking-wide uppercase"
+                style={
+                  colors
+                    ? {
+                        backgroundColor: badgeBg,
+                        color: badgeFg,
+                        borderColor: badgeBorder,
+                      }
+                    : undefined
+                }
+              >
+                <StatusDot color={dotColor} />
+                {statusLabel}
+              </Badge>
+            </div>
 
-            <NodePanel.Content>
-              <div className="px-3 pb-3">
-                <NodeDescription
-                  label={
-                    project.name.length > 32
-                      ? project.name.slice(0, 30) + "\u2026"
-                      : project.name
-                  }
-                  description={[
-                    project.targetDate
-                      ? `Target: ${project.targetDate}`
-                      : null,
+            {/* Content */}
+            <div className="px-3 pb-3">
+              <div className="text-sm font-semibold leading-tight text-foreground">
+                {project.name.length > 32
+                  ? project.name.slice(0, 30) + "\u2026"
+                  : project.name}
+              </div>
+              {(project.targetDate || project.owner) && (
+                <div className="text-[11px] mt-1 text-muted-foreground">
+                  {[
+                    project.targetDate ? `Target: ${project.targetDate}` : null,
                     project.owner ? project.owner : null,
                   ]
                     .filter(Boolean)
                     .join("  \u2022  ")}
-                />
-              </div>
-            </NodePanel.Content>
-
-            {(blockedBy > 0 || project.dependsOn.length > 0) && (
-              <NodePanel.Handles>
-                <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: footerText }}>
-                  <DependencyIcon />
-                  <span>
-                    {blockedBy > 0 ? `Blocks ${blockedBy}` : ""}
-                    {blockedBy > 0 && project.dependsOn.length > 0 ? " \u2022 " : ""}
-                    {project.dependsOn.length > 0 ? `Depends on ${project.dependsOn.length}` : ""}
-                  </span>
                 </div>
-              </NodePanel.Handles>
-            )}
-          </NodePanel.Root>
-          </div>
+              )}
+            </div>
 
-          <Handle type="source" position={Position.Bottom} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
+            {/* Footer */}
+            {(blockedBy > 0 ||
+              project.blockedBy.length > 0 ||
+              project.dependsOn.length > 0) && (
+              <div className="flex items-center gap-1.5 px-3 pb-2 text-[10px] text-muted-foreground border-t border-border/50 pt-2">
+                <DependencyIcon />
+                <span>
+                  {[
+                    blockedBy > 0 ? `Blocks ${blockedBy}` : null,
+                    project.blockedBy.length > 0
+                      ? `Blocked by ${project.blockedBy.length}`
+                      : null,
+                    project.dependsOn.length > 0
+                      ? `Depends on ${project.dependsOn.length}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" \u2022 ")}
+                </span>
+              </div>
+            )}
+          </Card>
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            className="!opacity-0 !pointer-events-none !w-2 !h-2"
+          />
         </div>
       </TooltipTrigger>
-      <TooltipContent tooltipType="default">
-        <div className="max-w-[260px] text-xs leading-relaxed text-slate-900 p-1">
-          <div className="font-semibold mb-1 text-slate-900">{project.name}</div>
-          <div className="text-slate-600">Status: {project.status}</div>
-          {project.targetDate && (
-            <div className="text-slate-600">Target: {project.targetDate}</div>
-          )}
-          {project.owner && (
-            <div className="text-slate-600">Owner: {project.owner}</div>
+      <TooltipContent side="right" className="max-w-[260px]">
+        <div className="text-xs leading-relaxed space-y-0.5">
+          <div className="font-semibold">{project.name}</div>
+          <div>Status: {project.status}</div>
+          {project.targetDate && <div>Target: {project.targetDate}</div>}
+          {project.owner && <div>Owner: {project.owner}</div>}
+          {project.blockedBy.length > 0 && (
+            <div>Blocked by: {project.blockedBy.join(", ")}</div>
           )}
           {project.dependsOn.length > 0 && (
-            <div className="text-slate-600">
-              Depends on: {project.dependsOn.join(", ")}
-            </div>
+            <div>Depends on: {project.dependsOn.join(", ")}</div>
           )}
           {project.notes && (
-            <div className="text-slate-500 mt-1 italic">{project.notes}</div>
+            <div className="mt-1 italic opacity-80">{project.notes}</div>
           )}
         </div>
       </TooltipContent>

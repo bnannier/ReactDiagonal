@@ -11,7 +11,7 @@ interface TierLabelData {
 function TierLabelComponent({ data }: NodeProps) {
   const labelData = data as unknown as TierLabelData;
   return (
-    <div className="text-[10px] font-bold tracking-[3px] text-slate-500 dark:text-slate-500 uppercase select-none">
+    <div className="text-[10px] font-bold tracking-[3px] text-muted-foreground uppercase select-none">
       {labelData.label}
     </div>
   );

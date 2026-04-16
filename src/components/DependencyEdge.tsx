@@ -121,6 +121,7 @@ function DependencyEdgeComponent({
   source,
   target,
   data,
+  markerStart,
   markerEnd,
 }: EdgeProps) {
   const nodes   = useNodes();
@@ -147,7 +148,7 @@ function DependencyEdgeComponent({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={mergedStyle} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} style={mergedStyle} markerStart={markerStart} markerEnd={markerEnd} />
       {selected && (
         <EdgeLabelRenderer>
           <div
