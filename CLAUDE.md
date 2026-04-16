@@ -39,4 +39,9 @@ Coda returns feature names with backtick wrapping AND trailing whitespace (e.g. 
 ## Process Rules
 
 - Always run multiple parallel agents for non-trivial changes — the user has mandated this.
+- Always verify visual changes using Chrome MCP tools (navigate + `computer` screenshot/zoom, NOT code-based checks alone). Take pictures of the actual rendered result before calling work done.
 - Never commit changes unless explicitly asked.
+
+## UI Library
+
+Use **shadcn/ui** for all UI primitives (Tooltip, Button, Card, Dialog/Sheet, Tabs, etc.). Do not use `@synergycodes/overflow-ui` for new work — it is being phased out.

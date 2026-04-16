@@ -12,39 +12,49 @@ export interface Project {
 
 export const STATUS_CONFIG: Record<
   string,
-  { color: string; bg: string; border: string; text: string }
+  { color: string; bg: string; bgDark: string; border: string; text: string; textDark: string }
 > = {
   "In Progress": {
     color: "#f59e0b",
     bg: "#fffbeb",
+    bgDark: "#2a1e05",
     border: "#f59e0b",
     text: "#92400e",
+    textDark: "#fcd34d",
   },
   Blocked: {
     color: "#ef4444",
     bg: "#fef2f2",
+    bgDark: "#2a0d0d",
     border: "#ef4444",
     text: "#991b1b",
+    textDark: "#fca5a5",
   },
   "Not Started": {
     color: "#9ca3af",
     bg: "#f0f1f3",
+    bgDark: "#1f2937",
     border: "#9ca3af",
     text: "#374151",
+    textDark: "#d1d5db",
   },
   Complete: {
     color: "#22c55e",
     bg: "#f0fdf4",
+    bgDark: "#0a2515",
     border: "#22c55e",
     text: "#166534",
+    textDark: "#86efac",
   },
 };
 
 export const DEFAULT_STATUS_CONFIG = {
   color: "#9ca3af",
   bg: "#f0f1f3",
+  bgDark: "#1f2937",
   border: "#9ca3af",
   text: "#374151",
+  textDark: "#d1d5db",
 };
 
 export function getStatusConfig(status: string) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useTheme } from "next-themes";
 import {
   NodePanel,
   NodeDescription,
@@ -47,6 +48,12 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as ProjectNodeData;
   const { project, blockedBy } = nodeData;
   const config = getStatusConfig(project.status);
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted ? resolvedTheme === "dark" : true; // default dark to avoid FOUC
+  const cardBg = isDark ? config.bgDark : config.bg;
+  const footerText = isDark ? config.textDark : config.text;
 
   return (
     <Tooltip placement="right">
@@ -54,7 +61,7 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
         <div>
           <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
 
-          <div style={{ position: "relative", width: 250 }} className="bg-white dark:bg-slate-800 rounded-xl">
+          <div style={{ position: "relative", width: 250, background: cardBg }} className="rounded-xl">
             {/* Absolute border overlay — wraps the NodePanel without affecting its layout */}
             <div
               style={{
@@ -106,7 +113,7 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
 
             {(blockedBy > 0 || project.dependsOn.length > 0) && (
               <NodePanel.Handles>
-                <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: config.text }}>
+                <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: footerText }}>
                   <DependencyIcon />
                   <span>
                     {blockedBy > 0 ? `Blocks ${blockedBy}` : ""}
@@ -123,22 +130,22 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
         </div>
       </TooltipTrigger>
       <TooltipContent tooltipType="default">
-        <div className="max-w-[260px] text-xs leading-relaxed">
-          <div className="font-semibold mb-1">{project.name}</div>
-          <div className="text-slate-600 dark:text-slate-400">Status: {project.status}</div>
+        <div className="max-w-[260px] text-xs leading-relaxed text-slate-900 p-1">
+          <div className="font-semibold mb-1 text-slate-900">{project.name}</div>
+          <div className="text-slate-600">Status: {project.status}</div>
           {project.targetDate && (
-            <div className="text-slate-600 dark:text-slate-400">Target: {project.targetDate}</div>
+            <div className="text-slate-600">Target: {project.targetDate}</div>
           )}
           {project.owner && (
-            <div className="text-slate-600 dark:text-slate-400">Owner: {project.owner}</div>
+            <div className="text-slate-600">Owner: {project.owner}</div>
           )}
           {project.dependsOn.length > 0 && (
-            <div className="text-slate-600 dark:text-slate-400">
+            <div className="text-slate-600">
               Depends on: {project.dependsOn.join(", ")}
             </div>
           )}
           {project.notes && (
-            <div className="text-slate-400 mt-1 italic">{project.notes}</div>
+            <div className="text-slate-500 mt-1 italic">{project.notes}</div>
           )}
         </div>
       </TooltipContent>
