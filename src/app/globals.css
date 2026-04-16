@@ -60,6 +60,33 @@
   }
 }
 
+/* React Flow zoom / fit-view control buttons — stand out clearly on either
+   theme by using shadcn card + foreground tokens with an explicit border. */
+.react-flow__controls {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+.react-flow__controls-button {
+  background: hsl(var(--card)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--foreground)) !important;
+  width: 32px !important;
+  height: 32px !important;
+}
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+.react-flow__controls-button:hover {
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+.react-flow__controls-button svg {
+  fill: hsl(var(--foreground)) !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
 /* Reverse React Flow's default animated-edge dash direction so it flows
    TOWARD the arrowhead (which is at the source end via markerStart). */
 @keyframes dashdraw {
