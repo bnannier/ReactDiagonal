@@ -3,9 +3,7 @@
 import { memo } from "react";
 import {
   BaseEdge,
-  getSmoothStepPath,
   useNodes,
-  Position,
   type EdgeProps,
   type Node,
   EdgeLabelRenderer,
@@ -13,7 +11,7 @@ import {
 import { useEdgeStyle, EdgeLabel } from "@synergycodes/overflow-ui";
 
 const NODE_W = 250;
-const NODE_H = 115;   // slightly taller than visual height to add clearance
+const NODE_H = 160;   // slightly taller than visual height to add clearance
 const BYPASS_MARGIN = 28;
 const CORNER_R = 14;
 
@@ -58,7 +56,7 @@ function routedPath(
   const maxX = Math.max(sx, tx) + 8;
 
   const blocking = nodes.filter((n) => {
-    if (n.id === sourceId || n.id === targetId || n.type === "tierLabel") return false;
+    if (n.id === sourceId || n.id === targetId || n.type === "tierLabel" || n.type === "pillarGroup") return false;
     const left  = n.position.x;
     const right = left + NODE_W;
     const top   = n.position.y;
@@ -123,6 +121,7 @@ function DependencyEdgeComponent({
   source,
   target,
   data,
+  markerEnd,
 }: EdgeProps) {
   const nodes   = useNodes();
   const edgeState    = selected ? "selected" : "default";
@@ -148,7 +147,7 @@ function DependencyEdgeComponent({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={mergedStyle} />
+      <BaseEdge id={id} path={edgePath} style={mergedStyle} markerEnd={markerEnd} />
       {selected && (
         <EdgeLabelRenderer>
           <div

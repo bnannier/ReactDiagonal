@@ -1,7 +1,8 @@
 import { Project } from "./types";
+import { codaConfig } from "./coda-config";
 
-const DOC_ID = "TRox5YL_Dr";
-const TABLE_ID = "grid-JnGN_SjsL9";
+const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
+const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-JnGN_SjsL9";
 const CODA_API = "https://coda.io/apis/v1";
 
 // Format ISO date string to readable format
@@ -36,12 +37,35 @@ function parseValue(val: unknown): string {
     const v = val as Record<string, unknown>;
     if (v.name) return String(v.name);
     if (v.formatted) return String(v.formatted);
-    if (v.content) return String(v.content);
+    if (v.content) {
+      const c = v.content as Record<string, unknown>;
+      if (c.name) return String(c.name);
+      return String(v.content);
+    }
   }
   return String(val);
 }
 
-// Parse lookup refs into array of names (handles plain arrays and single objects)
+// Extract a display name from a single Coda relation/lookup item object
+function extractItemName(item: unknown): string {
+  if (!item) return "";
+  if (typeof item === "string") return stripBackticks(item);
+  if (typeof item === "object" && item !== null) {
+    const v = item as Record<string, unknown>;
+    // Direct name field
+    if (typeof v.name === "string" && v.name) return v.name.trim();
+    // Nested inside content
+    if (v.content && typeof v.content === "object") {
+      const c = v.content as Record<string, unknown>;
+      if (typeof c.name === "string" && c.name) return c.name.trim();
+    }
+    // displayName fallback
+    if (typeof v.displayName === "string" && v.displayName) return v.displayName.trim();
+  }
+  return "";
+}
+
+// Parse lookup/relation refs into array of names (handles arrays and single objects)
 function parseLookupRefs(val: unknown): string[] {
   if (!val) return [];
   if (typeof val === "string") {
@@ -49,13 +73,11 @@ function parseLookupRefs(val: unknown): string[] {
     return s ? [s] : [];
   }
   if (Array.isArray(val)) {
-    return val.map((item: Record<string, unknown>) =>
-      String(item.name || item)
-    );
+    return val.map(extractItemName).filter(Boolean);
   }
   if (typeof val === "object" && val !== null) {
-    const v = val as Record<string, unknown>;
-    if (v.name) return [String(v.name)];
+    const name = extractItemName(val);
+    return name ? [name] : [];
   }
   return [];
 }
@@ -67,14 +89,14 @@ function parseRows(data: {
     const vals = row.values || {};
     return {
       id: row.id,
-      name: parseValue(vals["Project / Initiative"]),
-      status: parseValue(vals["Status"]),
-      owner: parseValue(vals["Owner"]),
-      targetDate: parseDate(vals["Target Date"]),
-      dependencyType: parseValue(vals["Dependency Type"]),
-      notes: parseValue(vals["Notes"]),
-      dependsOn: parseLookupRefs(vals["Depends On"]),
-      blocks: parseLookupRefs(vals["Blocks"]),
+      name: parseValue(vals[codaConfig.nameColumn]),
+      status: parseValue(vals[codaConfig.statusColumn]),
+      owner: parseValue(vals[codaConfig.ownerColumn]),
+      targetDate: parseDate(vals[codaConfig.targetDateColumn]),
+      pillar: parseValue(vals[codaConfig.pillarColumn]),
+      notes: parseValue(vals[codaConfig.notesColumn]),
+      blockedBy: parseLookupRefs(vals[codaConfig.blockedByColumn]),
+      dependsOn: parseLookupRefs(vals[codaConfig.dependsOnColumn]),
     };
   });
 }
@@ -83,18 +105,44 @@ function parseRows(data: {
  * Server-side: fetch directly from Coda API using the secret token.
  * Used in server components and API routes.
  */
-export async function fetchProjectsServer(): Promise<Project[]> {
+export async function fetchTableName(
+  docId = DEFAULT_DOC_ID,
+  tableId = DEFAULT_TABLE_ID,
+): Promise<string> {
   const token = process.env.CODA_API_TOKEN;
   if (!token) throw new Error("CODA_API_TOKEN not set");
 
   const resp = await fetch(
-    `${CODA_API}/docs/${DOC_ID}/tables/${TABLE_ID}/rows?useColumnNames=true&valueFormat=rich`,
+    `${CODA_API}/docs/${docId}/tables/${tableId}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      next: { revalidate: 30 },
+      next: { revalidate: 300 },
+    }
+  );
+
+  if (!resp.ok) throw new Error(`Coda API returned ${resp.status}`);
+  const data = await resp.json();
+  return data.name as string;
+}
+
+export async function fetchProjectsServer(
+  docId = DEFAULT_DOC_ID,
+  tableId = DEFAULT_TABLE_ID,
+): Promise<Project[]> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) throw new Error("CODA_API_TOKEN not set");
+
+  const resp = await fetch(
+    `${CODA_API}/docs/${docId}/tables/${tableId}/rows?useColumnNames=true&valueFormat=rich`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
     }
   );
 
@@ -106,8 +154,15 @@ export async function fetchProjectsServer(): Promise<Project[]> {
 /**
  * Client-side: fetch from our own API route (keeps the token hidden).
  */
-export async function fetchProjectsClient(): Promise<Project[]> {
-  const resp = await fetch("/api/rows");
+export async function fetchProjectsClient(
+  docId?: string,
+  tableId?: string,
+): Promise<Project[]> {
+  const params = new URLSearchParams();
+  if (docId) params.set("docId", docId);
+  if (tableId) params.set("tableId", tableId);
+  const qs = params.size ? `?${params}` : "";
+  const resp = await fetch(`/api/rows${qs}`);
   if (!resp.ok) throw new Error(`API returned ${resp.status}`);
   const data = await resp.json();
   return data.projects;

@@ -1,29 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
-  useNodesState,
-  useEdgesState,
   BackgroundVariant,
+  useReactFlow,
   type NodeTypes,
   type EdgeTypes,
+  type Node,
+  type Edge,
 } from "@xyflow/react";
-import { Button } from "@synergycodes/overflow-ui";
 import { ProjectNode } from "./ProjectNode";
 import { DependencyEdge } from "./DependencyEdge";
 import { TierLabel } from "./TierLabel";
+import { PillarGroup } from "./PillarGroup";
 import { Legend } from "./Legend";
+import { HelpModal } from "./HelpModal";
+import { ThemeToggle } from "./ThemeToggle";
+import { ThemeParamSync } from "./ThemeParamSync";
 import { buildFlowGraph } from "@/lib/layout";
 import { fetchProjectsClient } from "@/lib/api";
 import type { Project } from "@/lib/types";
+import type { ProjectNodeData } from "@/lib/layout";
 
 const nodeTypes: NodeTypes = {
   projectNode: ProjectNode,
   tierLabel: TierLabel,
+  pillarGroup: PillarGroup,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -32,9 +39,23 @@ const edgeTypes: EdgeTypes = {
 
 interface Props {
   initialProjects: Project[];
+  title?: string;
+  docId?: string;
+  tableId?: string;
 }
 
-export function DependencyMap({ initialProjects }: Props) {
+function FlowUpdater({ nodes, edges }: { nodes: Node<ProjectNodeData>[]; edges: Edge[] }) {
+  const { setNodes, setEdges } = useReactFlow();
+  const isMounted = useRef(false);
+  useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return; }
+    setNodes(nodes);
+    setEdges(edges);
+  }, [nodes, edges, setNodes, setEdges]);
+  return null;
+}
+
+export function DependencyMap({ initialProjects, title, docId, tableId }: Props) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -42,31 +63,21 @@ export function DependencyMap({ initialProjects }: Props) {
     setLastUpdated(new Date());
   }, []);
 
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+  const { nodes: computedNodes, edges: computedEdges } = useMemo(
     () => buildFlowGraph(projects),
     [projects]
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges] = useEdgesState(initialEdges);
-
-  // Update nodes/edges when projects change
-  useEffect(() => {
-    const { nodes: newNodes, edges: newEdges } = buildFlowGraph(projects);
-    setNodes(newNodes);
-    setEdges(newEdges);
-  }, [projects, setNodes, setEdges]);
-
   // Client-side polling for live updates
   const refresh = useCallback(async () => {
     try {
-      const fresh = await fetchProjectsClient();
+      const fresh = await fetchProjectsClient(docId, tableId);
       setProjects(fresh);
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Failed to refresh:", err);
     }
-  }, []);
+  }, [docId, tableId]);
 
   useEffect(() => {
     const interval = setInterval(refresh, 30000);
@@ -74,60 +85,65 @@ export function DependencyMap({ initialProjects }: Props) {
   }, [refresh]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex flex-col items-center gap-3 py-4 px-4 shrink-0">
-        <h1 className="text-lg font-semibold text-slate-100">
-          IUX Dependency Flowmap
-        </h1>
-        <p className="text-xs text-slate-500">
-          Live data from Coda &bull; Auto-refreshes every 30s
-          {lastUpdated && <> &bull; Last: {lastUpdated.toLocaleTimeString()}</>}
-        </p>
-        <Legend />
-        <div>
-          <Button size="small" variant="secondary" onClick={refresh}>
-            &#x21bb; Refresh Now
-          </Button>
+    <ReactFlowProvider>
+      <div className="flex flex-col h-full">
+        <HelpModal />
+        <ThemeParamSync />
+        <ThemeToggle />
+        {/* Refresh button — fixed top-right, left of the ? button */}
+        <button
+          onClick={refresh}
+          className="fixed top-3 right-16 z-50 w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm flex items-center justify-center transition-colors"
+          aria-label="Refresh"
+        >
+          &#x21bb;
+        </button>
+        {/* Header */}
+        <div className="flex flex-col items-center gap-2 py-4 px-4 shrink-0">
+          <Legend />
+          {lastUpdated && (
+            <p className="text-xs text-slate-500">
+              {lastUpdated.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+
+        {/* Flow Canvas */}
+        <div className="flex-1 min-h-0">
+          <ReactFlow
+            defaultNodes={computedNodes}
+            defaultEdges={computedEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodesConnectable={false}
+            elevateEdgesOnSelect
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.3}
+            maxZoom={1.5}
+            proOptions={{ hideAttribution: true }}
+          >
+            <FlowUpdater nodes={computedNodes} edges={computedEdges} />
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1}
+              color="#1e293b"
+            />
+            <Controls
+              showInteractive={false}
+              position="bottom-right"
+            />
+            <MiniMap
+              nodeStrokeWidth={3}
+              pannable
+              zoomable
+              position="bottom-left"
+              style={{ background: "#1e293b" }}
+            />
+          </ReactFlow>
         </div>
       </div>
-
-      {/* Flow Canvas */}
-      <div className="flex-1 min-h-0">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onConnect={() => {}}
-          nodesConnectable={false}
-          elevateEdgesOnSelect
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          minZoom={0.3}
-          maxZoom={1.5}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            color="#1e293b"
-          />
-          <Controls
-            showInteractive={false}
-            position="bottom-right"
-          />
-          <MiniMap
-            nodeStrokeWidth={3}
-            pannable
-            zoomable
-            position="bottom-left"
-            style={{ background: "#1e293b" }}
-          />
-        </ReactFlow>
-      </div>
-    </div>
+    </ReactFlowProvider>
   );
 }

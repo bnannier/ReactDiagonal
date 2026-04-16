@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchProjectsServer } from "@/lib/api";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl;
+  const docId = searchParams.get("docId") ?? undefined;
+  const tableId = searchParams.get("tableId") ?? undefined;
+
   try {
-    const projects = await fetchProjectsServer();
+    const projects = await fetchProjectsServer(docId, tableId);
     return NextResponse.json(
       { projects },
       {

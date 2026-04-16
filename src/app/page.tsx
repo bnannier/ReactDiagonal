@@ -1,21 +1,28 @@
-import { fetchProjectsServer } from "@/lib/api";
+import { fetchProjectsServer, fetchTableName } from "@/lib/api";
 import { DependencyMap } from "@/components/DependencyMap";
 
-// Force dynamic rendering — data comes from the Coda API at request time
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  let projects: Awaited<ReturnType<typeof fetchProjectsServer>>;
-  try {
-    projects = await fetchProjectsServer();
-  } catch {
-    // During build or if token is missing, start with empty state
-    projects = [];
-  }
+interface Props {
+  searchParams: Promise<{ docId?: string; tableId?: string }>;
+}
+
+export default async function Home({ searchParams }: Props) {
+  const { docId, tableId } = await searchParams;
+
+  const [projects, tableName] = await Promise.allSettled([
+    fetchProjectsServer(docId, tableId),
+    fetchTableName(docId, tableId),
+  ]);
 
   return (
     <main className="flex flex-col h-screen">
-      <DependencyMap initialProjects={projects} />
+      <DependencyMap
+        initialProjects={projects.status === "fulfilled" ? projects.value : []}
+        title={tableName.status === "fulfilled" ? tableName.value : undefined}
+        docId={docId}
+        tableId={tableId}
+      />
     </main>
   );
 }

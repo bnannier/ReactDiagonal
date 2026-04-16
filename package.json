@@ -13,6 +13,7 @@
     "@synergycodes/overflow-ui": "^1.0.0-beta.26",
     "@xyflow/react": "^12.10.2",
     "next": "^14.2.35",
+    "next-themes": "^0.4.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

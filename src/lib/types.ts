@@ -4,10 +4,10 @@ export interface Project {
   status: string;
   owner: string;
   targetDate: string;
-  dependencyType: string;
+  pillar: string;
   notes: string;
+  blockedBy: string[];
   dependsOn: string[];
-  blocks: string[];
 }
 
 export const STATUS_CONFIG: Record<

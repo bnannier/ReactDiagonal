@@ -39,12 +39,13 @@ function DependencyIcon() {
 
 interface ProjectNodeData {
   project: Project;
+  blockedBy: number;
   [key: string]: unknown;
 }
 
 function ProjectNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as ProjectNodeData;
-  const { project } = nodeData;
+  const { project, blockedBy } = nodeData;
   const config = getStatusConfig(project.status);
 
   return (
@@ -53,7 +54,7 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
         <div>
           <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none !w-2 !h-2" />
 
-          <div style={{ position: "relative", width: 250 }}>
+          <div style={{ position: "relative", width: 250 }} className="bg-white dark:bg-slate-800 rounded-xl">
             {/* Absolute border overlay — wraps the NodePanel without affecting its layout */}
             <div
               style={{
@@ -103,20 +104,14 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
               </div>
             </NodePanel.Content>
 
-            {(project.dependsOn.length > 0 || project.blocks.length > 0) && (
+            {(blockedBy > 0 || project.dependsOn.length > 0) && (
               <NodePanel.Handles>
                 <div className="flex items-center gap-1 px-3 pb-2 text-[10px]" style={{ color: config.text }}>
                   <DependencyIcon />
                   <span>
-                    {project.blocks.length > 0
-                      ? `Blocks ${project.blocks.length}`
-                      : ""}
-                    {project.blocks.length > 0 && project.dependsOn.length > 0
-                      ? " \u2022 "
-                      : ""}
-                    {project.dependsOn.length > 0
-                      ? `Depends on ${project.dependsOn.length}`
-                      : ""}
+                    {blockedBy > 0 ? `Blocks ${blockedBy}` : ""}
+                    {blockedBy > 0 && project.dependsOn.length > 0 ? " \u2022 " : ""}
+                    {project.dependsOn.length > 0 ? `Depends on ${project.dependsOn.length}` : ""}
                   </span>
                 </div>
               </NodePanel.Handles>
@@ -130,21 +125,16 @@ function ProjectNodeComponent({ data, selected }: NodeProps) {
       <TooltipContent tooltipType="default">
         <div className="max-w-[260px] text-xs leading-relaxed">
           <div className="font-semibold mb-1">{project.name}</div>
-          <div className="text-slate-400">Status: {project.status}</div>
+          <div className="text-slate-600 dark:text-slate-400">Status: {project.status}</div>
           {project.targetDate && (
-            <div className="text-slate-400">Target: {project.targetDate}</div>
+            <div className="text-slate-600 dark:text-slate-400">Target: {project.targetDate}</div>
           )}
           {project.owner && (
-            <div className="text-slate-400">Owner: {project.owner}</div>
+            <div className="text-slate-600 dark:text-slate-400">Owner: {project.owner}</div>
           )}
           {project.dependsOn.length > 0 && (
-            <div className="text-slate-400">
+            <div className="text-slate-600 dark:text-slate-400">
               Depends on: {project.dependsOn.join(", ")}
-            </div>
-          )}
-          {project.blocks.length > 0 && (
-            <div className="text-slate-400">
-              Blocks: {project.blocks.join(", ")}
             </div>
           )}
           {project.notes && (
