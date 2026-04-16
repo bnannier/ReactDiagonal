@@ -2,6 +2,7 @@ import type { Node, Edge } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
 import Dagre from "@dagrejs/dagre";
 import { Project } from "./types";
+import type { StatusColors } from "./api";
 
 export interface ProjectNodeData {
   project: Project;
@@ -14,7 +15,7 @@ const TIER_LABELS = ["UPSTREAM", "MIDSTREAM", "DOWNSTREAM", "TIER 4", "TIER 5"];
 const PILLAR_PADDING = 28;
 const PILLAR_LABEL_H = 22;
 
-const MAX_PER_ROW = 5;
+const MAX_PER_ROW = 4;
 const NODESEP_X = 80;   // horizontal gap between nodes
 const SUB_ROW_GAP = 80; // vertical gap between wrapped rows within a tier
 const RANK_GAP = 160;   // vertical gap between tiers
@@ -22,7 +23,10 @@ const PILLAR_GAP = 60;  // extra horizontal gap between pillar groups
 const LAYOUT_START_X = 150;
 const LAYOUT_START_Y = 60;
 
-export function buildFlowGraph(projects: Project[]): {
+export function buildFlowGraph(
+  projects: Project[],
+  statusColors: StatusColors = {},
+): {
   nodes: Node<ProjectNodeData>[];
   edges: Edge[];
 } {
@@ -43,10 +47,16 @@ export function buildFlowGraph(projects: Project[]): {
     g.setNode(p.name, { width: NODE_W, height: NODE_H });
   });
 
+  // Feed BOTH blockedBy and dependsOn into Dagre so a card that only has
+  // dependsOn entries still gets pushed down a tier (otherwise it wrongly
+  // stays in UPSTREAM even when it depends on something in MIDSTREAM).
+  // The React Flow edges[] array is built separately below and stays driven
+  // by the explicit relation type — no transitive edges get drawn.
   projects.forEach((p) => {
-    p.blockedBy.forEach((blockerName) => {
-      if (nameToProject[blockerName]) {
-        g.setEdge(blockerName, p.name);
+    const upstreamNames = new Set<string>([...p.blockedBy, ...p.dependsOn]);
+    upstreamNames.forEach((upName) => {
+      if (nameToProject[upName]) {
+        g.setEdge(upName, p.name);
       }
     });
   });
@@ -200,13 +210,34 @@ export function buildFlowGraph(projects: Project[]): {
     });
   });
 
-  // Build edges: blockedBy = red solid arrow, dependsOn = amber dashed arrow
+  // Edge coloring rules (all edges keep arrow at source via markerStart):
+  //   1. blockedBy                               → RED solid, not animated
+  //   2. dependsOn + source derived Blocked      → RED solid, not animated (transitive block)
+  //   3. dependsOn otherwise                     → animated dashed, coloured by the TARGET's
+  //                                                raw Coda status fg (dynamic — changes in Coda
+  //                                                flow through automatically).
   const BLOCKED_COLOR = "#ef4444";
-  const DEPENDS_COLOR = "#f59e0b";
+  const DEFAULT_DEPENDS_COLOR = "#f59e0b";
+
+  // Coda's pill fg colors are designed for text on LIGHT pastel chips; on a
+  // dark page background some (like Not-Started olive) get lost. Mix the fg
+  // toward white so the edge reads clearly on either theme.
+  const brighten = (hex: string, amount = 0.35): string => {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    const mix = (ch: number) =>
+      Math.min(255, Math.round(ch + (255 - ch) * amount))
+        .toString(16)
+        .padStart(2, "0");
+    return `#${mix(r)}${mix(g)}${mix(b)}`;
+  };
+
   const edges: Edge[] = [];
 
   projects.forEach((p) => {
-    // Blocked By: source → target means "source blocks target"
+    // Blocked By: source blocks target. Always RED solid.
     p.blockedBy.forEach((blockerName) => {
       if (!nameToProject[blockerName]) return;
       edges.push({
@@ -216,24 +247,57 @@ export function buildFlowGraph(projects: Project[]): {
         type: "dependency",
         style: { stroke: BLOCKED_COLOR },
         markerStart: { type: MarkerType.ArrowClosed, color: BLOCKED_COLOR, width: 16, height: 16 },
+        animated: false,
         zIndex: 1,
         data: {},
       });
     });
 
-    // Depends On: source → target means "source must come before target"
+    // Depends On
     p.dependsOn.forEach((depName) => {
       if (!nameToProject[depName]) return;
       // Avoid duplicate if the same pair is already covered by blockedBy
       const dupId = `blocked:${depName}->${p.name}`;
       if (edges.find((e) => e.id === dupId)) return;
+
+      const sourceProject = nameToProject[depName];
+      const sourceDerivedBlocked = sourceProject?.status === "Blocked";
+
+      let color: string;
+      let dashed: boolean;
+      let animated: boolean;
+
+      if (sourceDerivedBlocked) {
+        // Rule 2: transitive block — render like a blockedBy edge.
+        color = BLOCKED_COLOR;
+        dashed = false;
+        animated = false;
+      } else {
+        // Rule 3: animated dependency coloured by the target's raw Coda status.
+        // Brighten the Coda fg (designed for light chips) so edges read on a
+        // dark page background without losing the dynamic-from-Coda property.
+        const targetRaw = p.rawStatus ?? p.status;
+        const dynamic = statusColors[targetRaw]?.fg;
+        color = dynamic ? brighten(dynamic, 0.35) : DEFAULT_DEPENDS_COLOR;
+        dashed = true;
+        animated = true;
+      }
+
       edges.push({
         id: `depends:${depName}->${p.name}`,
         source: depName,
         target: p.name,
         type: "dependency",
-        style: { stroke: DEPENDS_COLOR, strokeDasharray: "6 3" },
-        markerStart: { type: MarkerType.Arrow, color: DEPENDS_COLOR, width: 16, height: 16 },
+        style: dashed
+          ? { stroke: color, strokeDasharray: "6 3" }
+          : { stroke: color },
+        markerStart: {
+          type: dashed ? MarkerType.Arrow : MarkerType.ArrowClosed,
+          color,
+          width: 16,
+          height: 16,
+        },
+        animated,
         zIndex: 1,
         data: {},
       });

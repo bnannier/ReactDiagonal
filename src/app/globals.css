@@ -60,6 +60,39 @@
   }
 }
 
+/* Reverse React Flow's default animated-edge dash direction so it flows
+   TOWARD the arrowhead (which is at the source end via markerStart). */
+@keyframes dashdraw {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 10; }
+}
+
+/* In-progress pulse: cards with the In Progress status breathe a soft glow
+   in the Coda-configured status colour so active work is obvious at a glance.
+   Driven by --pulse-color set inline on the card (from Coda's column metadata
+   — changes in Coda reflect automatically). */
+@keyframes in-progress-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--pulse-color, transparent);
+  }
+  50% {
+    box-shadow: 0 0 18px 3px var(--pulse-color, transparent);
+  }
+}
+
+.animate-in-progress {
+  animation: in-progress-pulse 1.8s ease-in-out infinite;
+}
+
+/* When a card is both In Progress AND a blocker, run both animations in
+   parallel (CSS animation shorthand would otherwise overwrite). */
+.animate-in-progress.animate-block-flash {
+  animation:
+    in-progress-pulse 1.8s ease-in-out infinite,
+    block-blink 1s steps(1, end) infinite;
+}
+
 /* Blocker blink: cards that block another card blink between the status tint
    and a deep red so the blocker is impossible to miss. */
 @keyframes block-blink {

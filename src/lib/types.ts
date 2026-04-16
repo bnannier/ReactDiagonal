@@ -2,12 +2,24 @@ export interface Project {
   id: string;
   name: string;
   status: string;
+  /**
+   * The raw Coda Status value before any derivation (transitive block
+   * propagation). Used by layout.ts to colour edges based on the TARGET's
+   * original in-progress intent, even if the derived status is Blocked.
+   */
+  rawStatus?: string;
   owner: string;
   targetDate: string;
   pillar: string;
   notes: string;
   blockedBy: string[];
   dependsOn: string[];
+  /**
+   * All upstream cards reachable via dependsOn / blockedBy chains, excluding
+   * the direct entries already listed above. Shown in the card tooltip so users
+   * can see the full impact chain without needing extra edges drawn.
+   */
+  transitiveDependencies?: string[];
 }
 
 export const STATUS_CONFIG: Record<

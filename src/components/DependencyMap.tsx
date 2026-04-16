@@ -23,11 +23,12 @@ import { HelpModal } from "./HelpModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { ThemeParamSync } from "./ThemeParamSync";
 import { StatusColorsProvider } from "./StatusColorsContext";
+import { PillarColorsProvider } from "./PillarColorsContext";
 import { Button } from "@/components/ui/button";
 import { buildFlowGraph } from "@/lib/layout";
 import { fetchProjectsClient } from "@/lib/api";
 import type { Project } from "@/lib/types";
-import type { StatusColors } from "@/lib/api";
+import type { StatusColors, PillarColors } from "@/lib/api";
 import type { ProjectNodeData } from "@/lib/layout";
 
 const nodeTypes: NodeTypes = {
@@ -43,6 +44,7 @@ const edgeTypes: EdgeTypes = {
 interface Props {
   initialProjects: Project[];
   initialStatusColors?: StatusColors;
+  initialPillarColors?: PillarColors;
   title?: string;
   docId?: string;
   tableId?: string;
@@ -62,12 +64,15 @@ function FlowUpdater({ nodes, edges }: { nodes: Node<ProjectNodeData>[]; edges: 
 export function DependencyMap({
   initialProjects,
   initialStatusColors = {},
+  initialPillarColors = {},
   docId,
   tableId,
 }: Props) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [statusColors, setStatusColors] =
     useState<StatusColors>(initialStatusColors);
+  const [pillarColors, setPillarColors] =
+    useState<PillarColors>(initialPillarColors);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -75,8 +80,8 @@ export function DependencyMap({
   }, []);
 
   const { nodes: computedNodes, edges: computedEdges } = useMemo(
-    () => buildFlowGraph(projects),
-    [projects]
+    () => buildFlowGraph(projects, statusColors),
+    [projects, statusColors]
   );
 
   // Client-side polling for live updates
@@ -85,6 +90,7 @@ export function DependencyMap({
       const fresh = await fetchProjectsClient(docId, tableId);
       setProjects(fresh.projects);
       setStatusColors(fresh.statusColors);
+      setPillarColors(fresh.pillarColors);
       setLastUpdated(new Date());
     } catch (err) {
       console.error("Failed to refresh:", err);
@@ -99,6 +105,7 @@ export function DependencyMap({
   return (
     <ReactFlowProvider>
       <StatusColorsProvider value={statusColors}>
+      <PillarColorsProvider value={pillarColors}>
       <div className="flex flex-col h-full">
         <HelpModal />
         <ThemeParamSync />
@@ -159,6 +166,7 @@ export function DependencyMap({
           </ReactFlow>
         </div>
       </div>
+      </PillarColorsProvider>
       </StatusColorsProvider>
     </ReactFlowProvider>
   );

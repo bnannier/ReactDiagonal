@@ -1,7 +1,9 @@
 import { Project } from "./types";
 import { codaConfig } from "./coda-config";
 
-export type StatusColors = Record<string, { fg: string; bg: string }>;
+export type SelectColors = Record<string, { fg: string; bg: string }>;
+export type StatusColors = SelectColors;
+export type PillarColors = SelectColors;
 
 const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
 const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-JnGN_SjsL9";
@@ -89,10 +91,13 @@ function parseRows(data: {
 }): Project[] {
   return (data.items || []).map((row) => {
     const vals = row.values || {};
+    const status = parseValue(vals[codaConfig.statusColumn]);
     return {
       id: row.id,
       name: parseValue(vals[codaConfig.nameColumn]),
-      status: parseValue(vals[codaConfig.statusColumn]),
+      status,
+      // Snapshot the original Coda status before any derivation happens.
+      rawStatus: status,
       owner: parseValue(vals[codaConfig.ownerColumn]),
       targetDate: parseDate(vals[codaConfig.targetDateColumn]),
       pillar: parseValue(vals[codaConfig.pillarColumn]),
@@ -130,6 +135,126 @@ export async function fetchTableName(
   return data.name as string;
 }
 
+/**
+ * Walk each project's dependsOn + blockedBy chains and record every upstream
+ * card reachable (excluding directly-listed entries). Populates
+ * `transitiveDependencies` so the tooltip can surface the full impact chain
+ * without us having to draw extra edges on the canvas.
+ */
+function attachTransitiveDependencies(projects: Project[]): Project[] {
+  const byName = new Map(projects.map((p) => [p.name, p]));
+  return projects.map((p) => {
+    const direct = new Set<string>([...p.blockedBy, ...p.dependsOn]);
+    const visited = new Set<string>();
+    const stack: string[] = [...direct];
+    while (stack.length > 0) {
+      const name = stack.pop() as string;
+      if (visited.has(name) || name === p.name) continue;
+      visited.add(name);
+      const upstream = byName.get(name);
+      if (upstream) {
+        for (const n of upstream.blockedBy) stack.push(n);
+        for (const n of upstream.dependsOn) stack.push(n);
+      }
+    }
+    const transitive = Array.from(visited).filter((n) => !direct.has(n));
+    return { ...p, transitiveDependencies: transitive };
+  });
+}
+
+/**
+ * Fire-and-forget PATCH to Coda: set a single row's Status column.
+ * We don't await; failures are logged but don't block the render.
+ */
+function pushStatusToCoda(
+  docId: string,
+  tableId: string,
+  token: string,
+  rowId: string,
+  newStatus: string,
+) {
+  fetch(`${CODA_API}/docs/${docId}/tables/${tableId}/rows/${rowId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      row: {
+        cells: [{ column: codaConfig.statusColumn, value: newStatus }],
+      },
+    }),
+  }).catch((err) => {
+    console.error(`[sync] Coda PUT failed for row ${rowId}:`, err);
+  });
+}
+
+/**
+ * Apply the derived-status rule and sync any drift back to Coda in the
+ * background. Returns the projects list with the derived status already applied
+ * so the UI renders correctly even before Coda catches up.
+ *
+ * Rules (transitive):
+ *   - A project is "Blocked" if blockedBy has any value, OR if any entry in
+ *     dependsOn resolves to a project that is itself Blocked (recursive).
+ *   - If the raw Coda status is "Blocked" but the project no longer satisfies
+ *     either condition above → reset to "In Progress".
+ *   - Otherwise keep the raw Coda status.
+ */
+function syncDerivedStatus(
+  projects: Project[],
+  docId: string,
+  tableId: string,
+  token: string,
+): Project[] {
+  // Seed with cards that have at least one explicit blocker.
+  const blockedSet = new Set<string>();
+  for (const p of projects) {
+    if (p.blockedBy.length > 0) blockedSet.add(p.name);
+  }
+
+  // Propagate: a card becomes blocked if ANY name in its dependsOn is already
+  // blocked. Loop until a pass adds nothing.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const p of projects) {
+      if (blockedSet.has(p.name)) continue;
+      for (const depName of p.dependsOn) {
+        if (blockedSet.has(depName)) {
+          blockedSet.add(p.name);
+          grew = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return projects.map((p) => {
+    const directlyBlocked = p.blockedBy.length > 0;
+    const transitivelyBlocked = blockedSet.has(p.name);
+
+    // Coda sync — ONLY for direct block transitions. Transitive blocks stay
+    // in-memory so the target's rawStatus ("In Progress") is preserved and
+    // the edge coloring rule can still pick it up.
+    if (directlyBlocked && p.status !== "Blocked") {
+      pushStatusToCoda(docId, tableId, token, p.id, "Blocked");
+    } else if (!directlyBlocked && p.status === "Blocked") {
+      pushStatusToCoda(docId, tableId, token, p.id, "In Progress");
+    }
+
+    // In-memory: apply transitive block for UI display. Raw Coda value stays
+    // intact in p.rawStatus.
+    if (transitivelyBlocked && p.status !== "Blocked") {
+      return { ...p, status: "Blocked" };
+    }
+    if (!transitivelyBlocked && p.status === "Blocked") {
+      return { ...p, status: "In Progress" };
+    }
+    return p;
+  });
+}
+
 export async function fetchProjectsServer(
   docId = DEFAULT_DOC_ID,
   tableId = DEFAULT_TABLE_ID,
@@ -150,21 +275,21 @@ export async function fetchProjectsServer(
 
   if (!resp.ok) throw new Error(`Coda API returned ${resp.status}`);
   const data = await resp.json();
-  return parseRows(data);
+  const projects = attachTransitiveDependencies(parseRows(data));
+  return syncDerivedStatus(projects, docId, tableId, token);
 }
 
 /**
- * Server-side: fetch the Status column's select options with colors from Coda.
- * Returns a map of status-name → { fg, bg } hex colors set in the Coda table.
+ * Generic: fetch a single select column's option colours from Coda.
+ * Returns a map of option-name → { fg, bg } hex colors.
  */
-export async function fetchStatusColors(
-  docId = DEFAULT_DOC_ID,
-  tableId = DEFAULT_TABLE_ID,
-): Promise<StatusColors> {
-  const token = process.env.CODA_API_TOKEN;
-  if (!token) return {};
-
-  // List columns to find the Status column ID
+async function fetchSelectColumnColors(
+  docId: string,
+  tableId: string,
+  token: string,
+  columnName: string,
+): Promise<SelectColors> {
+  // List columns to find the target column ID
   const colsResp = await fetch(
     `${CODA_API}/docs/${docId}/tables/${tableId}/columns`,
     {
@@ -174,14 +299,14 @@ export async function fetchStatusColors(
   );
   if (!colsResp.ok) return {};
   const colsData = await colsResp.json();
-  const statusCol = (colsData.items || []).find(
-    (c: { name: string; id: string }) => c.name === codaConfig.statusColumn
+  const col = (colsData.items || []).find(
+    (c: { name: string; id: string }) => c.name === columnName
   );
-  if (!statusCol?.id) return {};
+  if (!col?.id) return {};
 
-  // Fetch the status column detail to get its select options
+  // Fetch the column detail to get its select options
   const detailResp = await fetch(
-    `${CODA_API}/docs/${docId}/tables/${tableId}/columns/${statusCol.id}`,
+    `${CODA_API}/docs/${docId}/tables/${tableId}/columns/${col.id}`,
     {
       headers: { Authorization: `Bearer ${token}` },
       next: { revalidate: 60 },
@@ -195,7 +320,7 @@ export async function fetchStatusColors(
     | undefined;
   if (!options) return {};
 
-  const colors: StatusColors = {};
+  const colors: SelectColors = {};
   for (const o of options) {
     if (!o?.name) continue;
     colors[o.name] = {
@@ -207,12 +332,40 @@ export async function fetchStatusColors(
 }
 
 /**
+ * Server-side: fetch the Status column's select options with colors from Coda.
+ */
+export async function fetchStatusColors(
+  docId = DEFAULT_DOC_ID,
+  tableId = DEFAULT_TABLE_ID,
+): Promise<StatusColors> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) return {};
+  return fetchSelectColumnColors(docId, tableId, token, codaConfig.statusColumn);
+}
+
+/**
+ * Server-side: fetch the Pillar column's select options with colors from Coda.
+ */
+export async function fetchPillarColors(
+  docId = DEFAULT_DOC_ID,
+  tableId = DEFAULT_TABLE_ID,
+): Promise<PillarColors> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) return {};
+  return fetchSelectColumnColors(docId, tableId, token, codaConfig.pillarColumn);
+}
+
+/**
  * Client-side: fetch from our own API route (keeps the token hidden).
  */
 export async function fetchProjectsClient(
   docId?: string,
   tableId?: string,
-): Promise<{ projects: Project[]; statusColors: StatusColors }> {
+): Promise<{
+  projects: Project[];
+  statusColors: StatusColors;
+  pillarColors: PillarColors;
+}> {
   const params = new URLSearchParams();
   if (docId) params.set("docId", docId);
   if (tableId) params.set("tableId", tableId);
@@ -220,5 +373,9 @@ export async function fetchProjectsClient(
   const resp = await fetch(`/api/rows${qs}`);
   if (!resp.ok) throw new Error(`API returned ${resp.status}`);
   const data = await resp.json();
-  return { projects: data.projects, statusColors: data.statusColors || {} };
+  return {
+    projects: data.projects,
+    statusColors: data.statusColors || {},
+    pillarColors: data.pillarColors || {},
+  };
 }

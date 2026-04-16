@@ -79,6 +79,9 @@ function ProjectNodeComponent({ data }: NodeProps) {
         // can swap it between the status colour and red without losing the
         // white base layer.
         "--tint": tintAlpha,
+        // --pulse-color drives the in-progress breathing glow (fg color at
+        // moderate alpha so the glow reads without being overpowering).
+        "--pulse-color": hexWithAlpha(colors.fg, "99"),
         background: `linear-gradient(${tintAlpha}, ${tintAlpha}), #ffffff`,
         borderColor: colors.fg,
         // Scope light-mode color vars to the card so shadcn text tokens stay readable.
@@ -104,7 +107,8 @@ function ProjectNodeComponent({ data }: NodeProps) {
             className={cn(
               "w-[250px] gap-0 py-0 rounded-xl shadow-sm border-2 ring-0",
               "bg-card text-card-foreground",
-              blockedBy > 0 && "animate-block-flash"
+              blockedBy > 0 && "animate-block-flash",
+              project.status === "In Progress" && "animate-in-progress"
             )}
             style={cardStyle}
           >
@@ -188,6 +192,12 @@ function ProjectNodeComponent({ data }: NodeProps) {
           )}
           {project.dependsOn.length > 0 && (
             <div>Depends on: {project.dependsOn.join(", ")}</div>
+          )}
+          {(project.transitiveDependencies?.length ?? 0) > 0 && (
+            <div className="text-slate-500 text-[11px] mt-1">
+              Also transitively depends on:{" "}
+              {project.transitiveDependencies!.join(", ")}
+            </div>
           )}
           {project.notes && (
             <div className="mt-1 italic opacity-80">{project.notes}</div>

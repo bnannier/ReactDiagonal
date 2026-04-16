@@ -48,27 +48,27 @@ function routedPath(
   nodes: Node[],
   bypassShift: number = 0,
 ): string {
-  // Detect nodes whose bounding box intersects the direct vertical/horizontal
-  // route from source to target.
-  const minY = Math.min(sy, ty);
-  const maxY = Math.max(sy, ty);
   const minX = Math.min(sx, tx) - 8;
   const maxX = Math.max(sx, tx) + 8;
-
-  const blocking = nodes.filter((n) => {
-    if (n.id === sourceId || n.id === targetId || n.type === "tierLabel" || n.type === "pillarGroup") return false;
-    const left  = n.position.x;
-    const right = left + NODE_W;
-    const top   = n.position.y;
-    const bot   = top + NODE_H;
-    // Must overlap both vertical and horizontal ranges of the path corridor
-    return top < maxY && bot > minY && left <= maxX && right >= minX;
-  });
 
   // Offset crossing by ±5px based on direction so left-going and right-going
   // edges that share the same tier pair don't overlap each other.
   const dirOffset = tx < sx ? -5 : tx > sx ? 5 : 0;
   const crossY = (sy + ty) / 2 + dirOffset;
+
+  // Only flag cards that the horizontal hop at crossY would actually pass
+  // through. Previously we flagged any card vertically between source and
+  // target, which caused spurious far-left bypass detours across tiers.
+  const blocking = nodes.filter((n) => {
+    if (n.id === sourceId || n.id === targetId || n.type === "tierLabel" || n.type === "pillarGroup") return false;
+    const left = n.position.x;
+    const right = left + NODE_W;
+    const top = n.position.y;
+    const bot = top + NODE_H;
+    const horizontallyOverlaps = left <= maxX && right >= minX;
+    const horizontalSegmentCrossesCard = top < crossY && bot > crossY;
+    return horizontallyOverlaps && horizontalSegmentCrossesCard;
+  });
 
   if (blocking.length === 0) {
     return smoothPoly([
@@ -139,7 +139,9 @@ function DependencyEdgeComponent({
   const mergedStyle = {
     ...overflowStyle,
     stroke: style?.stroke ?? overflowStyle.stroke,
-    opacity: 0.6,
+    strokeWidth: 2,
+    opacity: 0.95,
+    ...(style || {}),
   };
 
   // Mid-point for the label

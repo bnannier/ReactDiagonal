@@ -9,6 +9,26 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { useStatusColors } from "./StatusColorsContext";
+
+// Fallback colors used when Coda hasn't provided a matching status option.
+const FALLBACK_DOT: Record<string, string> = {
+  "In Progress": "#f59e0b",
+  Blocked: "#ef4444",
+  "Not Started": "#9ca3af",
+  Complete: "#22c55e",
+};
+
+function StatusDot({ status }: { status: string }) {
+  const statusColors = useStatusColors();
+  const color = statusColors[status]?.fg || FALLBACK_DOT[status] || "#9ca3af";
+  return (
+    <span
+      className="inline-block w-2.5 h-2.5 rounded-full mt-1 shrink-0"
+      style={{ background: color }}
+    />
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -147,25 +167,25 @@ export function HelpModal() {
               </p>
               <ul className="text-muted-foreground text-xs leading-relaxed space-y-2 list-none pl-0">
                 <li className="flex items-start gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 mt-1 shrink-0" />
+                  <StatusDot status="In Progress" />
                   <span>
                     <strong className="text-foreground">In Progress</strong> — work is actively happening. Use for features currently being built.
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shrink-0" />
+                  <StatusDot status="Blocked" />
                   <span>
                     <strong className="text-foreground">Blocked</strong> — the feature cannot proceed. Investigate what&apos;s blocking it.
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-slate-400 mt-1 shrink-0" />
+                  <StatusDot status="Not Started" />
                   <span>
                     <strong className="text-foreground">Not Started</strong> — planned but not begun. Use for backlog or upcoming work.
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 mt-1 shrink-0" />
+                  <StatusDot status="Complete" />
                   <span>
                     <strong className="text-foreground">Complete</strong> — feature is done. Use once the work is delivered.
                   </span>
