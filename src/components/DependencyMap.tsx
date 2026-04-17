@@ -48,6 +48,7 @@ interface Props {
   title?: string;
   docId?: string;
   tableId?: string;
+  pageId?: string;
 }
 
 function FlowUpdater({ nodes, edges }: { nodes: Node<ProjectNodeData>[]; edges: Edge[] }) {
@@ -68,6 +69,7 @@ export function DependencyMap({
   title,
   docId,
   tableId,
+  pageId,
 }: Props) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [statusColors, setStatusColors] =
@@ -117,7 +119,8 @@ export function DependencyMap({
             href={(() => {
               const qs = new URLSearchParams();
               if (docId) qs.set("docId", docId);
-              if (tableId) qs.set("tableId", tableId);
+              if (pageId) qs.set("pageId", pageId);
+              else if (tableId) qs.set("tableId", tableId);
               const suffix = qs.size ? `?${qs.toString()}` : "";
               return `https://react-diagonal.vercel.app/${suffix}`;
             })()}

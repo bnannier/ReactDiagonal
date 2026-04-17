@@ -5,9 +5,15 @@ export type SelectColors = Record<string, { fg: string; bg: string }>;
 export type StatusColors = SelectColors;
 export type PillarColors = SelectColors;
 
-const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
-// "Copy of IUX Dependency Map" on the "Experience Dependency" page.
-const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-QaOZZltrZI";
+// No hardcoded table IDs. Callers MUST pass a docId + tableId (usually from
+// the ?docId=...&tableId=... URL query). Missing IDs surface the empty-state
+// picker in the UI instead of loading some arbitrary default flowmap.
+function requireIds(docId?: string, tableId?: string): { docId: string; tableId: string } {
+  if (!docId || !tableId) {
+    throw new Error("Missing docId/tableId — use ?docId=...&tableId=... in the URL");
+  }
+  return { docId, tableId };
+}
 const CODA_API = "https://coda.io/apis/v1";
 
 // Format ISO date string to readable format
@@ -113,10 +119,53 @@ function parseRows(data: {
  * Server-side: fetch directly from Coda API using the secret token.
  * Used in server components and API routes.
  */
+/**
+ * Find the first table on a given Coda page. Accepts the short pageId that
+ * appears in Coda URLs (e.g. "suYR1GHY" from .../Page-Name_suYR1GHY) or the
+ * longer "canvas-..." page id. Returns the tableId (e.g. "grid-...") or null.
+ */
+export async function resolveTableIdForPage(
+  docId: string,
+  pageId: string,
+): Promise<string | null> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) throw new Error("CODA_API_TOKEN not set");
+  const auth = { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" as const };
+
+  // Step 1: resolve the canvas-* id. Accept either a short id ("suriNjLU")
+  // from the Coda URL tail OR the full "canvas-..." id.
+  let canvasId = pageId.startsWith("canvas-") ? pageId : null;
+  if (!canvasId) {
+    const pagesResp = await fetch(`${CODA_API}/docs/${docId}/pages?limit=200`, auth);
+    if (!pagesResp.ok) return null;
+    const pagesData = await pagesResp.json();
+    const pages = (pagesData.items || []) as {
+      id: string;
+      browserLink?: string;
+    }[];
+    const match = pages.find((p) => (p.browserLink ?? "").split("_").pop() === pageId);
+    if (!match) return null;
+    canvasId = match.id;
+  }
+
+  // Step 2: find a table whose parent.id equals the canvas id. The table
+  // endpoint's parent.browserLink is NOT reliable — always match by id.
+  const tablesResp = await fetch(`${CODA_API}/docs/${docId}/tables`, auth);
+  if (!tablesResp.ok) return null;
+  const tablesData = await tablesResp.json();
+  const tables = (tablesData.items || []) as {
+    id: string;
+    parent?: { id?: string };
+  }[];
+  const match = tables.find((t) => t.parent?.id === canvasId);
+  return match?.id ?? null;
+}
+
 export async function fetchTableName(
-  docId = DEFAULT_DOC_ID,
-  tableId = DEFAULT_TABLE_ID,
+  docIdArg?: string,
+  tableIdArg?: string,
 ): Promise<string> {
+  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
   const token = process.env.CODA_API_TOKEN;
   if (!token) throw new Error("CODA_API_TOKEN not set");
 
@@ -258,9 +307,10 @@ function syncDerivedStatus(
 }
 
 export async function fetchProjectsServer(
-  docId = DEFAULT_DOC_ID,
-  tableId = DEFAULT_TABLE_ID,
+  docIdArg?: string,
+  tableIdArg?: string,
 ): Promise<Project[]> {
+  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
   const token = process.env.CODA_API_TOKEN;
   if (!token) throw new Error("CODA_API_TOKEN not set");
 
@@ -337,9 +387,10 @@ async function fetchSelectColumnColors(
  * Server-side: fetch the Status column's select options with colors from Coda.
  */
 export async function fetchStatusColors(
-  docId = DEFAULT_DOC_ID,
-  tableId = DEFAULT_TABLE_ID,
+  docIdArg?: string,
+  tableIdArg?: string,
 ): Promise<StatusColors> {
+  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
   const token = process.env.CODA_API_TOKEN;
   if (!token) return {};
   return fetchSelectColumnColors(docId, tableId, token, codaConfig.statusColumn);
@@ -349,9 +400,10 @@ export async function fetchStatusColors(
  * Server-side: fetch the Pillar column's select options with colors from Coda.
  */
 export async function fetchPillarColors(
-  docId = DEFAULT_DOC_ID,
-  tableId = DEFAULT_TABLE_ID,
+  docIdArg?: string,
+  tableIdArg?: string,
 ): Promise<PillarColors> {
+  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
   const token = process.env.CODA_API_TOKEN;
   if (!token) return {};
   return fetchSelectColumnColors(docId, tableId, token, codaConfig.pillarColumn);

@@ -10,15 +10,21 @@ export async function GET(req: NextRequest) {
   const docId = searchParams.get("docId") ?? undefined;
   const tableId = searchParams.get("tableId") ?? undefined;
 
+  if (!docId || !tableId) {
+    return NextResponse.json(
+      { error: "Missing docId/tableId — pass both as query params" },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   try {
     const [projects, statusColors, pillarColors] = await Promise.all([
       fetchProjectsServer(docId, tableId),
       fetchStatusColors(docId, tableId),
       fetchPillarColors(docId, tableId),
     ]);
-    // No caching — the derived-status sync fires fire-and-forget PUTs to Coda,
-    // and a cached response can capture pre-PUT values. Clients must always
-    // see the freshest Coda data so rawStatus tracks reality.
+    // No caching — derived-status sync writes fire-and-forget PUTs to Coda
+    // and a cached response can capture pre-PUT values.
     return NextResponse.json(
       { projects, statusColors, pillarColors },
       {
@@ -29,6 +35,9 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
