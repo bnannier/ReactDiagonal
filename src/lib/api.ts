@@ -234,12 +234,13 @@ function syncDerivedStatus(
     const directlyBlocked = p.blockedBy.length > 0;
     const transitivelyBlocked = blockedSet.has(p.name);
 
-    // Coda sync — ONLY for direct block transitions. Transitive blocks stay
-    // in-memory so the target's rawStatus ("In Progress") is preserved and
-    // the edge coloring rule can still pick it up.
-    if (directlyBlocked && p.status !== "Blocked") {
+    // Coda sync — push for ANY block transition (direct OR transitive) so the
+    // stored Status column always reflects delivery reality: if the feature
+    // can't make progress (because it or any upstream is blocked), Coda says
+    // Blocked. When the chain unblocks, we flip it back to In Progress.
+    if (transitivelyBlocked && p.status !== "Blocked") {
       pushStatusToCoda(docId, tableId, token, p.id, "Blocked");
-    } else if (!directlyBlocked && p.status === "Blocked") {
+    } else if (!transitivelyBlocked && p.status === "Blocked") {
       pushStatusToCoda(docId, tableId, token, p.id, "In Progress");
     }
 

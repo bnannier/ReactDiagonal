@@ -16,11 +16,14 @@ export async function GET(req: NextRequest) {
       fetchStatusColors(docId, tableId),
       fetchPillarColors(docId, tableId),
     ]);
+    // No caching — the derived-status sync fires fire-and-forget PUTs to Coda,
+    // and a cached response can capture pre-PUT values. Clients must always
+    // see the freshest Coda data so rawStatus tracks reality.
     return NextResponse.json(
       { projects, statusColors, pillarColors },
       {
         headers: {
-          "Cache-Control": "s-maxage=30, stale-while-revalidate=60",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
         },
       }
     );
