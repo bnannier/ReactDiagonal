@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { codaConfig } from "@/lib/coda-config";
 
 const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
-const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-JnGN_SjsL9";
+const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-QaOZZltrZI";
 const CODA_API = "https://coda.io/apis/v1";
 
 export async function GET(req: NextRequest) {

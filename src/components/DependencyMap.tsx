@@ -65,6 +65,7 @@ export function DependencyMap({
   initialProjects,
   initialStatusColors = {},
   initialPillarColors = {},
+  title,
   docId,
   tableId,
 }: Props) {
@@ -110,38 +111,44 @@ export function DependencyMap({
         <HelpModal />
         <ThemeParamSync />
         <ThemeToggle />
-        {/* Production site link — fixed top-left, icon only. Carries the
-            current docId/tableId so the prod site opens with the same view. */}
-        <a
-          href={(() => {
-            const qs = new URLSearchParams();
-            if (docId) qs.set("docId", docId);
-            if (tableId) qs.set("tableId", tableId);
-            const suffix = qs.size ? `?${qs.toString()}` : "";
-            return `https://react-diagonal.vercel.app/${suffix}`;
-          })()}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="fixed top-3 left-4 z-50 inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-          aria-label="Open production site"
-          title="Open production site"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
+        {/* Top-left cluster: external link icon + table title. */}
+        <div className="fixed top-3 left-4 z-50 flex items-center gap-3">
+          <a
+            href={(() => {
+              const qs = new URLSearchParams();
+              if (docId) qs.set("docId", docId);
+              if (tableId) qs.set("tableId", tableId);
+              const suffix = qs.size ? `?${qs.toString()}` : "";
+              return `https://react-diagonal.vercel.app/${suffix}`;
+            })()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            aria-label="Open production site"
+            title="Open production site"
           >
-            <path d="M15 3h6v6" />
-            <path d="M10 14 21 3" />
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          </svg>
-        </a>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+          </a>
+          {title && (
+            <h1 className="text-sm font-semibold text-foreground truncate max-w-[420px]">
+              {title}
+            </h1>
+          )}
+        </div>
         {/* Refresh button — fixed top-right, left of the ? button */}
         <Button
           variant="outline"

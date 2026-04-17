@@ -6,7 +6,8 @@ export type StatusColors = SelectColors;
 export type PillarColors = SelectColors;
 
 const DEFAULT_DOC_ID = process.env.CODA_DOC_ID ?? "TRox5YL_Dr";
-const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-JnGN_SjsL9";
+// "Copy of IUX Dependency Map" on the "Experience Dependency" page.
+const DEFAULT_TABLE_ID = process.env.CODA_TABLE_ID ?? "grid-QaOZZltrZI";
 const CODA_API = "https://coda.io/apis/v1";
 
 // Format ISO date string to readable format
