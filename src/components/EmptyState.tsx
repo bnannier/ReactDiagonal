@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { CodaReferrerRedirect } from "./CodaReferrerRedirect";
 
 interface Props {
   reason: string;
@@ -15,6 +16,8 @@ interface Props {
 export function EmptyState({ reason, detail, docId, tableId }: Props) {
   return (
     <div className="flex-1 flex items-center justify-center p-6">
+      {/* Auto-detect Coda host on bare embed URLs. */}
+      <CodaReferrerRedirect />
       <Card className="max-w-xl w-full p-8 flex flex-col gap-4">
         <h1 className="text-lg font-semibold text-foreground">
           Pick a Coda table to visualise

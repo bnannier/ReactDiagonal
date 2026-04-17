@@ -36,10 +36,32 @@ Coda returns feature names with backtick wrapping AND trailing whitespace (e.g. 
 - Optional `?theme=dark|light` URL param (read by `ThemeParamSync`) overrides the system preference — useful when embedded in Coda.
 - Tailwind `darkMode: 'class'`. When adding new UI, use `dark:` variants alongside light-mode defaults.
 
+## Prime Directive — PUSH + VERIFY IN CODA
+
+**After every change, the loop is:**
+1. Commit the change.
+2. `git push origin main` immediately (Vercel auto-deploys).
+3. Wait for the deploy to land (curl the prod URL to confirm).
+4. **Verify the fix inside the actual Coda embed** — not via the bare app URL. Navigate Chrome to the Coda page that embeds the flowchart, and inspect what the user actually sees.
+
+Testing a change locally or hitting the prod URL directly proves nothing about the real user experience. The flowchart's primary deployment target is embedded in Coda; only that view counts as "verified."
+
+## Primary Use Case — EMBEDDED IN CODA
+
+The flowchart lives inside a Coda iframe embed.
+
+Coda embeds pass NO context to the iframe by URL. The app must either:
+1. Receive explicit `?docId=...&pageId=...` params in the embed URL the user pastes, OR
+2. Auto-detect the hosting Coda page via `document.referrer` parsing client-side and redirect.
+
+Both mechanisms must be kept working. Coda page URLs look like
+`https://coda.io/d/{doc-slug}_d{DOC_ID}/{page-slug}_s{PAGE_ID_TAIL}#...`
+
 ## Process Rules
 
 - Always run multiple parallel agents for non-trivial changes — the user has mandated this.
 - Always verify visual changes using Chrome MCP tools (navigate + `computer` screenshot/zoom, NOT code-based checks alone). Take pictures of the actual rendered result before calling work done.
+- When testing the flow chart, verify behaviour **as embedded inside a Coda page**, not only via the bare app URL.
 - Never commit changes unless explicitly asked.
 
 ## UI Library
