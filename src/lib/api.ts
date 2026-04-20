@@ -93,6 +93,29 @@ function parseLookupRefs(val: unknown): string[] {
   return [];
 }
 
+/**
+ * Ticket columns in Coda come back as rich WebPage objects when the user has
+ * pasted a URL — e.g. `{ "@type": "WebPage", url: "...", name?: "..." }`.
+ * We return the URL (preferring a display name if Coda supplied one, joined
+ * with the URL so the tooltip can still link out). Plain-text tickets like
+ * "PROJ-123" come through as normal strings and are handled by parseValue.
+ */
+function parseTicket(val: unknown): string | undefined {
+  if (!val) return undefined;
+  if (typeof val === "string") {
+    const s = stripBackticks(val);
+    return s || undefined;
+  }
+  if (typeof val === "object" && val !== null) {
+    const v = val as Record<string, unknown>;
+    const url = typeof v.url === "string" ? v.url : undefined;
+    const name = typeof v.name === "string" ? v.name : undefined;
+    if (url) return url;
+    if (name) return name;
+  }
+  return parseValue(val) || undefined;
+}
+
 function parseRows(data: {
   items: { id: string; values: Record<string, unknown> }[];
 }): Project[] {
@@ -109,7 +132,7 @@ function parseRows(data: {
       targetDate: parseDate(vals[codaConfig.targetDateColumn]),
       pillar: parseValue(vals[codaConfig.pillarColumn]),
       notes: parseValue(vals[codaConfig.notesColumn]),
-      ticket: parseValue(vals[codaConfig.ticketColumn]) || undefined,
+      ticket: parseTicket(vals[codaConfig.ticketColumn]),
       blockedBy: parseLookupRefs(vals[codaConfig.blockedByColumn]),
       dependsOn: parseLookupRefs(vals[codaConfig.dependsOnColumn]),
     };

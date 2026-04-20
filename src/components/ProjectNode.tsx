@@ -47,6 +47,26 @@ interface ProjectNodeData {
   [key: string]: unknown;
 }
 
+// Extract a short, human-readable label from a ticket URL. For Jira links we
+// pull the issue key (e.g. "ROBO-2260"); otherwise we fall back to the final
+// path segment so the tooltip never displays a wall of URL.
+function ticketLabel(ticket: string): string {
+  try {
+    const u = new URL(ticket);
+    // Jira: board URLs carry the key in ?selectedIssue=KEY-123
+    const selected = u.searchParams.get("selectedIssue");
+    if (selected) return selected;
+    // Jira: /browse/KEY-123 or /jira/browse/KEY-123
+    const jiraKey = ticket.match(/\b([A-Z][A-Z0-9]+-\d+)\b/);
+    if (jiraKey) return jiraKey[1];
+    // Fallback: last non-empty path segment
+    const parts = u.pathname.split("/").filter(Boolean);
+    return parts[parts.length - 1] || u.hostname;
+  } catch {
+    return ticket;
+  }
+}
+
 // Apply a low-opacity version of a hex color for subtle card tints in any theme.
 function hexWithAlpha(hex: string, alpha: string): string {
   // If it's already an 8-digit hex, replace the alpha; otherwise append alpha
@@ -195,9 +215,9 @@ function ProjectNodeComponent({ data }: NodeProps) {
                   href={project.ticket}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline text-primary"
+                  className="underline text-primary font-mono"
                 >
-                  {project.ticket}
+                  {ticketLabel(project.ticket)}
                 </a>
               ) : (
                 <span className="font-mono">{project.ticket}</span>
