@@ -109,6 +109,7 @@ function parseRows(data: {
       targetDate: parseDate(vals[codaConfig.targetDateColumn]),
       pillar: parseValue(vals[codaConfig.pillarColumn]),
       notes: parseValue(vals[codaConfig.notesColumn]),
+      ticket: parseValue(vals[codaConfig.ticketColumn]) || undefined,
       blockedBy: parseLookupRefs(vals[codaConfig.blockedByColumn]),
       dependsOn: parseLookupRefs(vals[codaConfig.dependsOnColumn]),
     };

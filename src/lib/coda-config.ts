@@ -17,6 +17,7 @@ export const codaConfig = {
   targetDateColumn: "Target Date",
   pillarColumn: "Pillar",
   notesColumn: "Description",
+  ticketColumn: "Ticket",
 
   /**
    * Relationship columns.

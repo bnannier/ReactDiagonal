@@ -12,6 +12,11 @@ export interface Project {
   targetDate: string;
   pillar: string;
   notes: string;
+  /**
+   * Optional ticket reference (e.g. Jira key "PROJ-123" or a full URL). Rendered
+   * in the card tooltip; if it parses as a URL it becomes a clickable link.
+   */
+  ticket?: string;
   blockedBy: string[];
   dependsOn: string[];
   /**

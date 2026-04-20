@@ -187,6 +187,23 @@ function ProjectNodeComponent({ data }: NodeProps) {
           <div>Status: {project.status}</div>
           {project.targetDate && <div>Target: {project.targetDate}</div>}
           {project.owner && <div>Owner: {project.owner}</div>}
+          {project.ticket && (
+            <div>
+              Ticket:{" "}
+              {/^https?:\/\//i.test(project.ticket) ? (
+                <a
+                  href={project.ticket}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-primary"
+                >
+                  {project.ticket}
+                </a>
+              ) : (
+                <span className="font-mono">{project.ticket}</span>
+              )}
+            </div>
+          )}
           {project.blockedBy.length > 0 && (
             <div>Blocked by: {project.blockedBy.join(", ")}</div>
           )}
