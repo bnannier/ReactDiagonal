@@ -124,16 +124,27 @@ export function DependencyMap({
               const suffix = qs.size ? `?${qs.toString()}` : "";
               return `https://react-diagonal.vercel.app/${suffix}`;
             })()}
+            // Coda's embed iframe sandbox blocks target="_blank" and
+            // window.open silently (no allow-popups). Try a real new tab
+            // first, and if the browser swallows it fall back to navigating
+            // the top-level Coda tab via allow-top-navigation. Cmd/Ctrl+click
+            // bypasses the sandbox entirely and always opens a new tab.
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => {
-              // Passing ANY features string to window.open triggers popup-
-              // window behaviour; omitting it lets the browser honour the
-              // user's "open in new tab" default. rel=noopener on the anchor
-              // keeps us safe without the features-string side-effect.
               const href = e.currentTarget.href;
               const w = window.open(href, "_blank");
-              if (w) e.preventDefault();
+              if (w) {
+                e.preventDefault();
+                return;
+              }
+              // Popup blocked by iframe sandbox — escape to the top window.
+              e.preventDefault();
+              try {
+                window.top!.location.href = href;
+              } catch {
+                window.location.href = href;
+              }
             }}
             className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             aria-label="Open production site"
