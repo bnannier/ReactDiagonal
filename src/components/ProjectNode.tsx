@@ -215,7 +215,9 @@ function ProjectNodeComponent({ data }: NodeProps) {
                   href={project.ticket}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline text-primary font-mono"
+                  // Tooltip uses bg-primary/text-primary-foreground, so the
+                  // link must inherit — text-primary would be invisible.
+                  className="underline font-mono"
                 >
                   {ticketLabel(project.ticket)}
                 </a>

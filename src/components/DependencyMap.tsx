@@ -127,12 +127,12 @@ export function DependencyMap({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => {
-              // Inside the Coda iframe, plain target="_blank" can be blocked
-              // by the embed sandbox. Forcing window.open from a user click
-              // opens a real new tab; if that's blocked too we let the anchor
-              // fall through.
+              // Passing ANY features string to window.open triggers popup-
+              // window behaviour; omitting it lets the browser honour the
+              // user's "open in new tab" default. rel=noopener on the anchor
+              // keeps us safe without the features-string side-effect.
               const href = e.currentTarget.href;
-              const w = window.open(href, "_blank", "noopener,noreferrer");
+              const w = window.open(href, "_blank");
               if (w) e.preventDefault();
             }}
             className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
