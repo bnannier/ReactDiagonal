@@ -126,6 +126,15 @@ export function DependencyMap({
             })()}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => {
+              // Inside the Coda iframe, plain target="_blank" can be blocked
+              // by the embed sandbox. Forcing window.open from a user click
+              // opens a real new tab; if that's blocked too we let the anchor
+              // fall through.
+              const href = e.currentTarget.href;
+              const w = window.open(href, "_blank", "noopener,noreferrer");
+              if (w) e.preventDefault();
+            }}
             className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             aria-label="Open production site"
             title="Open production site"
