@@ -77,6 +77,29 @@ export function DependencyMap({
   const [pillarColors, setPillarColors] =
     useState<PillarColors>(initialPillarColors);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyShareLink = useCallback(async (href: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(href);
+      } else {
+        // Fallback for sandboxed iframes without Clipboard API permission.
+        const ta = document.createElement("textarea");
+        ta.value = href;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  }, []);
 
   useEffect(() => {
     setLastUpdated(new Date());
@@ -125,30 +148,30 @@ export function DependencyMap({
               return `https://react-diagonal.vercel.app/${suffix}`;
             })()}
             // Coda's embed iframe sandbox blocks target="_blank" and
-            // window.open silently (no allow-popups). Try a real new tab
-            // first, and if the browser swallows it fall back to navigating
-            // the top-level Coda tab via allow-top-navigation. Cmd/Ctrl+click
-            // bypasses the sandbox entirely and always opens a new tab.
+            // window.open silently. Instead of fighting the sandbox, copy
+            // the share URL to the clipboard so the user can paste it into
+            // a real browser tab. Cmd/Ctrl+click still opens a new tab
+            // natively if the user wants that path.
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => {
-              const href = e.currentTarget.href;
-              const w = window.open(href, "_blank");
-              if (w) {
-                e.preventDefault();
+              // Let modifier-clicks (Cmd/Ctrl/Shift/middle) through so power
+              // users can still force a new tab via the browser gesture.
+              if (
+                e.metaKey ||
+                e.ctrlKey ||
+                e.shiftKey ||
+                e.altKey ||
+                e.button !== 0
+              ) {
                 return;
               }
-              // Popup blocked by iframe sandbox — escape to the top window.
               e.preventDefault();
-              try {
-                window.top!.location.href = href;
-              } catch {
-                window.location.href = href;
-              }
+              void copyShareLink(e.currentTarget.href);
             }}
             className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-            aria-label="Open production site"
-            title="Open production site"
+            aria-label="Copy share link"
+            title="Copy share link"
           >
             <svg
               width="12"
@@ -170,6 +193,15 @@ export function DependencyMap({
             <h1 className="text-sm font-semibold text-foreground truncate max-w-[420px]">
               {title}
             </h1>
+          )}
+          {copied && (
+            <span
+              role="status"
+              aria-live="polite"
+              className="text-xs font-medium px-2 py-1 rounded-md bg-primary text-primary-foreground shadow-sm animate-in fade-in slide-in-from-left-1"
+            >
+              Link copied to clipboard
+            </span>
           )}
         </div>
         {/* Refresh button — fixed top-right, left of the ? button */}
