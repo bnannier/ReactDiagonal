@@ -137,8 +137,10 @@ const featuresMapping: TableMapping = {
 
 const teamsMapping: TableMapping = {
   nameColumn: "Team",
-  pillarColumn: "Pillar",
-  pillarOverride: "Teams",
+  // Each team is its own pillar — use the Team column value for grouping so
+  // "Enterprise AI" and "Enterprise Tech" render as sibling pillars alongside
+  // the Features table's "Explore" pillar instead of collapsing into one.
+  pillarColumn: "Team",
   featureRefColumn: "Feature",
 };
 
@@ -608,9 +610,38 @@ export async function fetchPageColors(
   const pillarColors: PillarColors = features
     ? await fetchSelectColumnColors(docId, features.id, token, codaConfig.pillarColumn)
     : {};
-  // Synthetic colour for the Teams pillar so those cards aren't unstyled.
-  if (tables.some((t) => t.shape === "teams") && !pillarColors["Teams"]) {
-    pillarColors["Teams"] = { fg: "#e2e8f0", bg: "#334155" };
+  // Give every team its own pillar colour so each team-pillar stands apart.
+  // Walk a deterministic slate/teal/amber palette so repeat renders stay stable.
+  const teamPalette = [
+    { fg: "#e2e8f0", bg: "#334155" },
+    { fg: "#ccfbf1", bg: "#115e59" },
+    { fg: "#fde68a", bg: "#78350f" },
+    { fg: "#fecaca", bg: "#7f1d1d" },
+    { fg: "#e9d5ff", bg: "#581c87" },
+    { fg: "#bae6fd", bg: "#0c4a6e" },
+  ];
+  const teamTables = tables.filter((t) => t.shape === "teams");
+  for (const t of teamTables) {
+    // Pull the distinct Team values from the table so we can seed colours.
+    const rowsResp = await fetch(
+      `${CODA_API}/docs/${docId}/tables/${t.id}/rows?useColumnNames=true&valueFormat=rich&limit=200`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!rowsResp.ok) continue;
+    const rowsData = await rowsResp.json();
+    const names = new Set<string>();
+    for (const r of rowsData.items || []) {
+      const v = (r.values || {})["Team"];
+      const name = typeof v === "string" ? v.replace(/^```|```$/g, "").trim() : "";
+      if (name) names.add(name);
+    }
+    let i = 0;
+    for (const n of names) {
+      if (!pillarColors[n]) {
+        pillarColors[n] = teamPalette[i % teamPalette.length];
+        i += 1;
+      }
+    }
   }
   const statusColors: StatusColors = {};
   for (const m of statusList) Object.assign(statusColors, m);
