@@ -3,26 +3,38 @@ import {
   fetchProjectsServer,
   fetchStatusColors,
   fetchPillarColors,
+  fetchProjectsForPage,
+  fetchPageColors,
 } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const docId = searchParams.get("docId") ?? undefined;
   const tableId = searchParams.get("tableId") ?? undefined;
+  const pageId = searchParams.get("pageId") ?? undefined;
 
-  if (!docId || !tableId) {
+  if (!docId || (!tableId && !pageId)) {
     return NextResponse.json(
-      { error: "Missing docId/tableId — pass both as query params" },
+      { error: "Missing docId + tableId/pageId — pass one of tableId or pageId" },
       { status: 400, headers: { "Cache-Control": "no-store" } }
     );
   }
 
   try {
-    const [projects, statusColors, pillarColors] = await Promise.all([
-      fetchProjectsServer(docId, tableId),
-      fetchStatusColors(docId, tableId),
-      fetchPillarColors(docId, tableId),
-    ]);
+    const [projects, statusColors, pillarColors] =
+      tableId
+        ? await Promise.all([
+            fetchProjectsServer(docId, tableId),
+            fetchStatusColors(docId, tableId),
+            fetchPillarColors(docId, tableId),
+          ])
+        : await (async () => {
+            const [p, c] = await Promise.all([
+              fetchProjectsForPage(docId, pageId!),
+              fetchPageColors(docId, pageId!),
+            ]);
+            return [p, c.statusColors, c.pillarColors] as const;
+          })();
     // No caching — derived-status sync writes fire-and-forget PUTs to Coda
     // and a cached response can capture pre-PUT values.
     return NextResponse.json(

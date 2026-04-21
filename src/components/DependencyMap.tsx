@@ -113,7 +113,7 @@ export function DependencyMap({
   // Client-side polling for live updates
   const refresh = useCallback(async () => {
     try {
-      const fresh = await fetchProjectsClient(docId, tableId);
+      const fresh = await fetchProjectsClient(docId, tableId, pageId);
       setProjects(fresh.projects);
       setStatusColors(fresh.statusColors);
       setPillarColors(fresh.pillarColors);
@@ -121,7 +121,7 @@ export function DependencyMap({
     } catch (err) {
       console.error("Failed to refresh:", err);
     }
-  }, [docId, tableId]);
+  }, [docId, tableId, pageId]);
 
   useEffect(() => {
     const interval = setInterval(refresh, 30000);

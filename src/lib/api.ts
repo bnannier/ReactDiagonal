@@ -116,22 +116,55 @@ function parseTicket(val: unknown): string | undefined {
   return parseValue(val) || undefined;
 }
 
-function parseRows(data: {
-  items: { id: string; values: Record<string, unknown> }[];
-}): Project[] {
+/**
+ * Per-table column mapping. Defaults to the Features shape from codaConfig;
+ * the Teams shape on pages like "Explore - P0" overrides nameColumn to "Team"
+ * and uses a synthetic "Teams" pillar since the table has no Pillar column.
+ */
+export interface TableMapping {
+  nameColumn: string;
+  pillarColumn: string;
+  /** If set, every row is forced to this pillar regardless of the column value. */
+  pillarOverride?: string;
+  /** Optional lookup column whose joined row-name becomes the card subtitle/notes. */
+  featureRefColumn?: string;
+}
+
+const featuresMapping: TableMapping = {
+  nameColumn: codaConfig.nameColumn,
+  pillarColumn: codaConfig.pillarColumn,
+};
+
+const teamsMapping: TableMapping = {
+  nameColumn: "Team",
+  pillarColumn: "Pillar",
+  pillarOverride: "Teams",
+  featureRefColumn: "Feature",
+};
+
+function parseRows(
+  data: { items: { id: string; values: Record<string, unknown> }[] },
+  mapping: TableMapping = featuresMapping,
+): Project[] {
   return (data.items || []).map((row) => {
     const vals = row.values || {};
     const status = parseValue(vals[codaConfig.statusColumn]);
+    // For team rows, stuff the linked feature name into `notes` so the tooltip
+    // shows what this team is on the hook for.
+    const defaultNotes = parseValue(vals[codaConfig.notesColumn]);
+    const notes = mapping.featureRefColumn
+      ? parseValue(vals[mapping.featureRefColumn]) || defaultNotes
+      : defaultNotes;
     return {
       id: row.id,
-      name: parseValue(vals[codaConfig.nameColumn]),
+      name: parseValue(vals[mapping.nameColumn]),
       status,
       // Snapshot the original Coda status before any derivation happens.
       rawStatus: status,
       owner: parseValue(vals[codaConfig.ownerColumn]),
       targetDate: parseDate(vals[codaConfig.targetDateColumn]),
-      pillar: parseValue(vals[codaConfig.pillarColumn]),
-      notes: parseValue(vals[codaConfig.notesColumn]),
+      pillar: mapping.pillarOverride ?? parseValue(vals[mapping.pillarColumn]),
+      notes,
       ticket: parseTicket(vals[codaConfig.ticketColumn]),
       blockedBy: parseLookupRefs(vals[codaConfig.blockedByColumn]),
       dependsOn: parseLookupRefs(vals[codaConfig.dependsOnColumn]),
@@ -183,6 +216,76 @@ export async function resolveTableIdForPage(
   }[];
   const match = tables.find((t) => t.parent?.id === canvasId);
   return match?.id ?? null;
+}
+
+/**
+ * Resolve every table sitting on a given Coda page, with its shape (features
+ * vs teams) detected from the column definitions. Used for option-(b) page
+ * embeds where a single URL renders multiple sibling tables as one graph.
+ */
+export interface PageTable {
+  id: string;
+  name: string;
+  shape: "features" | "teams";
+}
+
+export async function resolveTableIdsForPage(
+  docId: string,
+  pageId: string,
+): Promise<PageTable[]> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) throw new Error("CODA_API_TOKEN not set");
+  const auth = { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" as const };
+
+  let canvasId = pageId.startsWith("canvas-") ? pageId : null;
+  if (!canvasId) {
+    const pagesResp = await fetch(`${CODA_API}/docs/${docId}/pages?limit=200`, auth);
+    if (!pagesResp.ok) return [];
+    const pagesData = await pagesResp.json();
+    const pages = (pagesData.items || []) as { id: string; browserLink?: string }[];
+    const match = pages.find((p) => (p.browserLink ?? "").split("_").pop() === pageId);
+    if (!match) return [];
+    canvasId = match.id;
+  }
+
+  const tablesResp = await fetch(`${CODA_API}/docs/${docId}/tables`, auth);
+  if (!tablesResp.ok) return [];
+  const tablesData = await tablesResp.json();
+  const tables = (tablesData.items || []) as {
+    id: string;
+    name: string;
+    parent?: { id?: string };
+  }[];
+  const mine = tables.filter((t) => t.parent?.id === canvasId);
+
+  // Detect shape by inspecting the Feature column's format.type.
+  const results: PageTable[] = [];
+  for (const t of mine) {
+    let shape: "features" | "teams" = "features";
+    try {
+      const colsResp = await fetch(
+        `${CODA_API}/docs/${docId}/tables/${t.id}/columns?limit=200`,
+        auth,
+      );
+      if (colsResp.ok) {
+        const colsData = await colsResp.json();
+        const cols = (colsData.items || []) as {
+          name: string;
+          format?: { type?: string };
+        }[];
+        const hasTeam = cols.some((c) => c.name === "Team");
+        const featureCol = cols.find((c) => c.name === codaConfig.nameColumn);
+        const featureType = featureCol?.format?.type;
+        if (hasTeam && featureType && featureType !== "text") {
+          shape = "teams";
+        }
+      }
+    } catch {
+      // Fall back to features shape on any inspection failure.
+    }
+    results.push({ id: t.id, name: t.name, shape });
+  }
+  return results;
 }
 
 export async function fetchTableName(
@@ -330,14 +433,12 @@ function syncDerivedStatus(
   });
 }
 
-export async function fetchProjectsServer(
-  docIdArg?: string,
-  tableIdArg?: string,
+async function fetchRawProjectsForTable(
+  docId: string,
+  tableId: string,
+  token: string,
+  mapping: TableMapping,
 ): Promise<Project[]> {
-  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
-  const token = process.env.CODA_API_TOKEN;
-  if (!token) throw new Error("CODA_API_TOKEN not set");
-
   const resp = await fetch(
     `${CODA_API}/docs/${docId}/tables/${tableId}/rows?useColumnNames=true&valueFormat=rich`,
     {
@@ -346,13 +447,65 @@ export async function fetchProjectsServer(
         "Content-Type": "application/json",
       },
       cache: "no-store",
-    }
+    },
+  );
+  if (!resp.ok) throw new Error(`Coda API returned ${resp.status} for ${tableId}`);
+  const data = await resp.json();
+  return parseRows(data, mapping);
+}
+
+export async function fetchProjectsServer(
+  docIdArg?: string,
+  tableIdArg?: string,
+): Promise<Project[]> {
+  const { docId, tableId } = requireIds(docIdArg, tableIdArg);
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) throw new Error("CODA_API_TOKEN not set");
+  const raw = await fetchRawProjectsForTable(docId, tableId, token, featuresMapping);
+  const projects = attachTransitiveDependencies(raw);
+  return syncDerivedStatus(projects, docId, tableId, token);
+}
+
+/**
+ * Option-(b) multi-table page fetch: pull every table parented on the given
+ * Coda page, parse each per its shape, and merge into one Project list so
+ * Feature→Team and Team→Team edges render in the same graph. Derived-status
+ * sync only runs against the primary Features table (where the app owns the
+ * Status column); Team rows are treated as read-only nodes.
+ */
+export async function fetchProjectsForPage(
+  docId: string,
+  pageId: string,
+): Promise<Project[]> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) throw new Error("CODA_API_TOKEN not set");
+  const tables = await resolveTableIdsForPage(docId, pageId);
+  if (tables.length === 0) return [];
+
+  const rows = await Promise.all(
+    tables.map((t) =>
+      fetchRawProjectsForTable(
+        docId,
+        t.id,
+        token,
+        t.shape === "teams" ? teamsMapping : featuresMapping,
+      ),
+    ),
   );
 
-  if (!resp.ok) throw new Error(`Coda API returned ${resp.status}`);
-  const data = await resp.json();
-  const projects = attachTransitiveDependencies(parseRows(data));
-  return syncDerivedStatus(projects, docId, tableId, token);
+  const merged = attachTransitiveDependencies(rows.flat());
+
+  // Only sync derived Status back to the Features table — the Teams table
+  // doesn't own its own Blocked state the same way.
+  const primary = tables.find((t) => t.shape === "features");
+  if (!primary) return merged;
+  const byId = new Map(merged.map((p) => [p.id, p] as const));
+  const featureProjects = rows[tables.indexOf(primary)]
+    .map((p) => byId.get(p.id))
+    .filter((p): p is Project => !!p);
+  const synced = syncDerivedStatus(featureProjects, docId, primary.id, token);
+  const syncedById = new Map(synced.map((p) => [p.id, p] as const));
+  return merged.map((p) => syncedById.get(p.id) ?? p);
 }
 
 /**
@@ -434,11 +587,56 @@ export async function fetchPillarColors(
 }
 
 /**
+ * Merge multiple tables' status-colour maps into one, and inject the synthetic
+ * "Teams" pillar colour for option-(b) team cards. Pillar colours from the
+ * Features table take precedence since that's where the real Pillar column
+ * lives.
+ */
+export async function fetchPageColors(
+  docId: string,
+  pageId: string,
+): Promise<{ statusColors: StatusColors; pillarColors: PillarColors }> {
+  const token = process.env.CODA_API_TOKEN;
+  if (!token) return { statusColors: {}, pillarColors: {} };
+  const tables = await resolveTableIdsForPage(docId, pageId);
+  const statusList = await Promise.all(
+    tables.map((t) =>
+      fetchSelectColumnColors(docId, t.id, token, codaConfig.statusColumn),
+    ),
+  );
+  const features = tables.find((t) => t.shape === "features");
+  const pillarColors: PillarColors = features
+    ? await fetchSelectColumnColors(docId, features.id, token, codaConfig.pillarColumn)
+    : {};
+  // Synthetic colour for the Teams pillar so those cards aren't unstyled.
+  if (tables.some((t) => t.shape === "teams") && !pillarColors["Teams"]) {
+    pillarColors["Teams"] = { fg: "#e2e8f0", bg: "#334155" };
+  }
+  const statusColors: StatusColors = {};
+  for (const m of statusList) Object.assign(statusColors, m);
+  return { statusColors, pillarColors };
+}
+
+/**
+ * Pick a user-facing title for the page-mode embed. Prefers the Features
+ * table's name; falls back to the first table's name.
+ */
+export async function fetchPageTitle(
+  docId: string,
+  pageId: string,
+): Promise<string> {
+  const tables = await resolveTableIdsForPage(docId, pageId);
+  const features = tables.find((t) => t.shape === "features");
+  return (features ?? tables[0])?.name ?? "";
+}
+
+/**
  * Client-side: fetch from our own API route (keeps the token hidden).
  */
 export async function fetchProjectsClient(
   docId?: string,
   tableId?: string,
+  pageId?: string,
 ): Promise<{
   projects: Project[];
   statusColors: StatusColors;
@@ -447,6 +645,7 @@ export async function fetchProjectsClient(
   const params = new URLSearchParams();
   if (docId) params.set("docId", docId);
   if (tableId) params.set("tableId", tableId);
+  if (pageId && !tableId) params.set("pageId", pageId);
   const qs = params.size ? `?${params}` : "";
   const resp = await fetch(`/api/rows${qs}`);
   if (!resp.ok) throw new Error(`API returned ${resp.status}`);
