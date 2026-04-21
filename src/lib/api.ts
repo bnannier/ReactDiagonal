@@ -203,7 +203,9 @@ export async function resolveTableIdForPage(
       id: string;
       browserLink?: string;
     }[];
-    const match = pages.find((p) => (p.browserLink ?? "").split("_").pop() === pageId);
+    // Match by suffix — some Coda short ids contain `_` (e.g. "suf-4l_V"),
+    // so splitting on `_` and taking the last segment loses part of the id.
+    const match = pages.find((p) => (p.browserLink ?? "").endsWith("_" + pageId));
     if (!match) return null;
     canvasId = match.id;
   }
@@ -246,7 +248,7 @@ export async function resolveTableIdsForPage(
     if (!pagesResp.ok) return [];
     const pagesData = await pagesResp.json();
     const pages = (pagesData.items || []) as { id: string; browserLink?: string }[];
-    const match = pages.find((p) => (p.browserLink ?? "").split("_").pop() === pageId);
+    const match = pages.find((p) => (p.browserLink ?? "").endsWith("_" + pageId));
     if (!match) return [];
     canvasId = match.id;
   }
