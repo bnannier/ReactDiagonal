@@ -149,7 +149,15 @@ function parseRows(
   data: { items: { id: string; values: Record<string, unknown> }[] },
   mapping: TableMapping = featuresMapping,
 ): Project[] {
-  return (data.items || []).map((row) => {
+  return (data.items || [])
+    .filter((row) => {
+      // Coda tables routinely carry blank placeholder rows; without a name
+      // they'd render as nameless ghost cards and break the dagre layout
+      // (duplicate "" keys collide in the by-name map).
+      const name = parseValue((row.values || {})[mapping.nameColumn]);
+      return name.length > 0;
+    })
+    .map((row) => {
     const vals = row.values || {};
     const status = parseValue(vals[codaConfig.statusColumn]);
     // For team rows, stuff the linked feature name into `notes` so the tooltip
